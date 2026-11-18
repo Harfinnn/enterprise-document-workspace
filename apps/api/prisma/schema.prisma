@@ -1,0 +1,509 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum DocumentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  REJECTED
+  ARCHIVED
+}
+
+enum DocumentClassification {
+  PUBLIC
+  INTERNAL
+  CONFIDENTIAL
+  HIGHLY_CONFIDENTIAL
+}
+
+enum ApprovalRequestStatus {
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+}
+
+enum ApprovalActionType {
+  APPROVAL
+  SIGNATURE
+  APPROVAL_AND_SIGNATURE
+}
+
+enum WorkflowDepartmentScope {
+  DOCUMENT_DEPARTMENT
+  ANY_DEPARTMENT
+  SPECIFIC_DEPARTMENT
+}
+
+enum SignatureStatus {
+  SIGNED
+  FAILED
+  REVOKED
+}
+
+enum PasswordResetChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+// ==========================================
+// ORGANIZATION
+// ==========================================
+
+model Department {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                 User[]
+  documents             Document[]
+  specificWorkflowSteps ApprovalStep[] @relation("SpecificDepartment")
+  registrationRequests RegistrationRequest[]
+}
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  employeeNo      String?   @unique
+  fullName        String
+  email           String    @unique
+  emailVerifiedAt DateTime?
+  passwordHash    String
+  isActive        Boolean   @default(true)
+  
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  departmentId String?     @db.Uuid
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userRoles                   UserRole[]
+  ownedDocuments              Document[]                   @relation("DocumentOwner")
+  uploadedVersions            DocumentVersion[]            @relation("VersionUploader")
+  submittedRequests           ApprovalRequest[]            @relation("ApprovalSubmitter")
+  assignedApprovalSteps       ApprovalStepInstance[]       @relation("AssignedApprover")
+  actedApprovalSteps          ApprovalStepInstance[]       @relation("StepActor")
+  signatures                  DigitalSignature[]
+  auditLogs                   AuditLog[]
+  refreshTokens               RefreshToken[]
+  passwordResetChallenges     PasswordResetChallenge[]
+  emailVerificationChallenges EmailVerificationChallenge[]
+  registrationReviews RegistrationRequest[] @relation("RegistrationReviewedBy")
+  registrationCreated RegistrationRequest?  @relation("RegistrationCreatedUser")
+  activationChallenges AccountActivationChallenge[]
+}
+
+// ==========================================
+// ROLE & PERMISSION
+// ==========================================
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+  workflowSteps   ApprovalStep[]         @relation("StepApproverRole")
+  approvalSteps   ApprovalStepInstance[] @relation("InstanceApproverRole")
+}
+
+model Permission {
+  id          String  @id @default(uuid()) @db.Uuid
+  code        String  @unique
+  name        String
+  module      String
+  description String?
+
+  rolePermissions RolePermission[]
+}
+
+model UserRole {
+  userId String @db.Uuid
+  roleId String @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String @db.Uuid
+  permissionId String @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+// ==========================================
+// DOCUMENT MANAGEMENT
+// ==========================================
+
+model DocumentType {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documents Document[]
+  workflows ApprovalWorkflow[]
+}
+
+model Document {
+  id             String  @id @default(uuid()) @db.Uuid
+  documentNumber String  @unique
+  title          String
+  description    String?
+
+  status         DocumentStatus         @default(DRAFT)
+  classification DocumentClassification @default(INTERNAL)
+
+  departmentId   String @db.Uuid
+  ownerId        String @db.Uuid
+  documentTypeId String @db.Uuid
+
+  currentVersionNumber Int @default(1)
+
+  department   Department   @relation(fields: [departmentId], references: [id])
+  owner        User         @relation("DocumentOwner", fields: [ownerId], references: [id])
+  documentType DocumentType @relation(fields: [documentTypeId], references: [id])
+
+  versions         DocumentVersion[]
+  approvalRequests ApprovalRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
+  @@index([ownerId])
+  @@index([documentTypeId])
+  @@index([status])
+}
+
+model DocumentVersion {
+  id            String @id @default(uuid()) @db.Uuid
+  documentId    String @db.Uuid
+  versionNumber Int
+
+  originalFileName String
+  storageKey       String @unique
+  mimeType         String
+  fileSize         BigInt
+  checksumSha256   String
+
+  changeNotes String?
+
+  uploadedById String @db.Uuid
+
+  document   Document @relation(fields: [documentId], references: [id])
+  uploadedBy User     @relation("VersionUploader", fields: [uploadedById], references: [id])
+
+  approvalRequests ApprovalRequest[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+}
+
+// ==========================================
+// DYNAMIC APPROVAL WORKFLOW
+// ==========================================
+
+model ApprovalWorkflow {
+  id             String @id @default(uuid()) @db.Uuid
+  documentTypeId String @db.Uuid
+
+  name        String
+  description String?
+  version     Int     @default(1)
+  isActive    Boolean @default(true)
+
+  documentType DocumentType      @relation(fields: [documentTypeId], references: [id])
+  steps        ApprovalStep[]
+  requests     ApprovalRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([documentTypeId, version])
+}
+
+model ApprovalStep {
+  id         String @id @default(uuid()) @db.Uuid
+  workflowId String @db.Uuid
+
+  stepOrder  Int
+  name       String
+  actionType ApprovalActionType
+
+  approverRoleId String @db.Uuid
+
+  departmentScope      WorkflowDepartmentScope @default(DOCUMENT_DEPARTMENT)
+  specificDepartmentId String?                 @db.Uuid
+
+  workflow ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  approverRole Role @relation("StepApproverRole", fields: [approverRoleId], references: [id])
+
+  specificDepartment Department? @relation("SpecificDepartment", fields: [specificDepartmentId], references: [id])
+
+  @@unique([workflowId, stepOrder])
+}
+
+// ==========================================
+// APPROVAL EXECUTION
+// ==========================================
+
+model ApprovalRequest {
+  id                String @id @default(uuid()) @db.Uuid
+  documentId        String @db.Uuid
+  documentVersionId String @db.Uuid
+  workflowId        String @db.Uuid
+
+  submittedById String @db.Uuid
+
+  status ApprovalRequestStatus @default(IN_PROGRESS)
+
+  submittedAt DateTime  @default(now())
+  completedAt DateTime?
+
+  document        Document         @relation(fields: [documentId], references: [id])
+  documentVersion DocumentVersion  @relation(fields: [documentVersionId], references: [id])
+  workflow        ApprovalWorkflow @relation(fields: [workflowId], references: [id])
+  submittedBy     User             @relation("ApprovalSubmitter", fields: [submittedById], references: [id])
+
+  steps ApprovalStepInstance[]
+
+  @@index([documentId])
+  @@index([documentVersionId])
+  @@index([status])
+}
+
+model ApprovalStepInstance {
+  id                String @id @default(uuid()) @db.Uuid
+  approvalRequestId String @db.Uuid
+
+  stepOrder  Int
+  stepName   String
+  actionType ApprovalActionType
+
+  approverRoleId String? @db.Uuid
+  assignedUserId String? @db.Uuid
+  actedById      String? @db.Uuid
+
+  status   ApprovalStepStatus @default(PENDING)
+  comments String?
+
+  actedAt DateTime?
+
+  approvalRequest ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+
+  approverRole Role? @relation("InstanceApproverRole", fields: [approverRoleId], references: [id])
+  assignedUser User? @relation("AssignedApprover", fields: [assignedUserId], references: [id])
+  actedBy      User? @relation("StepActor", fields: [actedById], references: [id])
+
+  signature DigitalSignature?
+
+  @@unique([approvalRequestId, stepOrder])
+  @@index([assignedUserId, status])
+}
+
+// ==========================================
+// DIGITAL SIGNATURE
+// ==========================================
+
+model DigitalSignature {
+  id                     String @id @default(uuid()) @db.Uuid
+  approvalStepInstanceId String @unique @db.Uuid
+  signerUserId           String @db.Uuid
+
+  status SignatureStatus @default(SIGNED)
+
+  signatureProvider    String?
+  certificateSerial    String?
+  signatureHash        String?
+  signedFileStorageKey String?
+
+  signedAt  DateTime  @default(now())
+  revokedAt DateTime?
+
+  approvalStepInstance ApprovalStepInstance @relation(fields: [approvalStepInstanceId], references: [id])
+  signer               User                 @relation(fields: [signerUserId], references: [id])
+
+  @@index([signerUserId])
+}
+
+// ==========================================
+// AUDIT LOG
+// ==========================================
+
+model AuditLog {
+  id          String  @id @default(uuid()) @db.Uuid
+  actorUserId String? @db.Uuid
+
+  action     String
+  entityType String
+  entityId   String?
+
+  metadata Json?
+
+  ipAddress String?
+  userAgent String?
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model RefreshToken {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+
+  // Hanya hash token yang disimpan, bukan token aslinya.
+  tokenHash String @unique
+
+  // Identitas sesi dan perangkat
+  tokenFamily String
+  userAgent   String?
+  ipAddress   String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenFamily])
+  @@index([expiresAt])
+}
+
+model PasswordResetChallenge {
+  id          String               @id @default(uuid()) @db.Uuid
+  userId      String               @db.Uuid
+  channel     PasswordResetChannel
+  tokenHash   String               @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  attempts    Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  requestedIp String?
+  userAgent   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, channel, createdAt])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+model EmailVerificationChallenge {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  email       String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  requestedIp String?
+  userAgent   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+model RegistrationRequest {
+  id                    String             @id @default(uuid()) @db.Uuid
+  fullName              String
+  email                 String
+  employeeNo            String?
+  requestedDepartmentId String?            @db.Uuid
+
+  status                RegistrationStatus @default(PENDING)
+
+  reviewedById          String?            @db.Uuid
+  reviewedAt            DateTime?
+  rejectionReason       String?
+
+  createdUserId         String?            @unique @db.Uuid
+
+  requestIp             String?
+  userAgent             String?
+
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  requestedDepartment   Department?        @relation(fields: [requestedDepartmentId], references: [id], onDelete: SetNull)
+  reviewedBy            User?              @relation("RegistrationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdUser           User?              @relation("RegistrationCreatedUser", fields: [createdUserId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([status, createdAt])
+  @@index([requestedDepartmentId])
+  @@index([reviewedById])
+}
+
+model AccountActivationChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}

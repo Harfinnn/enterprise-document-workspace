@@ -1,0 +1,147 @@
+
+@import "tailwindcss";
+
+@theme {
+  --color-edw-navy: #071B2B;
+  --color-edw-teal: #167D8D;
+  --color-edw-cyan: #B9E4E8;
+  --color-edw-gray: #EEEEEE;
+}
+
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--color-edw-navy);
+  background: white;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+/* ===== EDW Logo Animation ===== */
+@keyframes edw-logo-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-15deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.1) rotate(3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes edw-logo-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes edw-logo-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes edw-logo-shine {
+  0% {
+    transform: translateX(-160%) skewX(-20deg);
+  }
+  50%,
+  100% {
+    transform: translateX(320%) skewX(-20deg);
+  }
+}
+
+@keyframes edw-logo-icon {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+}
+
+@keyframes edw-text-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.edw-logo-float {
+  animation: edw-logo-float 3.6s ease-in-out 1s infinite;
+}
+
+.edw-logo-box {
+  animation: edw-logo-in 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  box-shadow: 0 0 24px rgba(20, 184, 166, 0.35);
+}
+
+.edw-logo-ring {
+  animation: edw-logo-ring 2.8s ease-out 1s infinite;
+}
+
+.edw-logo-ring-delay {
+  animation-delay: 2.4s;
+}
+
+.edw-logo-shine {
+  animation: edw-logo-shine 4.5s ease-in-out 1.5s infinite;
+}
+
+.edw-logo-icon {
+  animation: edw-logo-icon 5s ease-in-out 1.5s infinite;
+  transform-origin: center;
+}
+
+.edw-logo-text {
+  animation: edw-text-in 0.8s ease-out 0.35s both;
+}
+
+.edw-logo-text-sub {
+  animation: edw-text-in 0.8s ease-out 0.55s both;
+}
+
+/* Hormati pengguna yang mematikan animasi di sistem */
+@media (prefers-reduced-motion: reduce) {
+  .edw-logo-float,
+  .edw-logo-box,
+  .edw-logo-ring,
+  .edw-logo-shine,
+  .edw-logo-icon,
+  .edw-logo-text,
+  .edw-logo-text-sub {
+    animation: none !important;
+  }
+}
