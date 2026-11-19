@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Patch,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -36,10 +37,17 @@ import { PasswordResetService } from './services/password-reset.service.js';
 import { VerifyEmailDto } from './dto/verify-email.dto.js';
 import { EmailVerificationService } from './services/email-verification.service.js';
 
+import { UpdatePhoneNumberDto } from './dto/update-phone-number.dto.js';
+
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
 
 import { ActivateAccountDto } from './dto/activate-account.dto.js';
 import { AccountActivationService } from './services/account-activation.service.js';
+
+import { SendPasswordResetOtpDto } from './dto/send-password-reset-otp.dto.js';
+import { VerifyPasswordResetOtpDto } from './dto/verify-password-reset-otp.dto.js';
+
+import { WhatsAppService } from '../whatsapp/whatsapp.service.js';
 
 @Controller('auth')
 export class AuthController {
@@ -49,6 +57,7 @@ export class AuthController {
     private readonly passwordResetService: PasswordResetService,
     private readonly emailVerificationService: EmailVerificationService,
     private readonly accountActivationService: AccountActivationService,
+    private readonly whatsappService: WhatsAppService,
   ) {}
 
   // ==========================================
@@ -95,6 +104,20 @@ export class AuthController {
       message: 'Profil berhasil diambil.',
       user,
     };
+  }
+
+  // ==========================================
+  // UPDATE USER WHATSAPP NUMBER
+  // ==========================================
+
+  @Patch('profile/phone')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async updatePhoneNumber(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdatePhoneNumberDto,
+  ) {
+    return this.authService.updatePhoneNumber(user.id, dto.phoneNumber);
   }
 
   // ==========================================
@@ -175,6 +198,25 @@ export class AuthController {
   }
 
   // ==========================================
+  // TEST WHATSAPP
+  // SUPERADMIN ONLY
+  // ==========================================
+
+  @Throttle({
+    default: {
+      limit: 3,
+      ttl: 900_000,
+    },
+  })
+  @Post('test-whatsapp')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @RequireRoles('IT_SUPERADMIN')
+  async testWhatsApp(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.testWhatsApp(user.id);
+  }
+
+  // ==========================================
   // FORGOT PASSWORD
   // 3 requests / 15 minutes
   // ==========================================
@@ -195,6 +237,40 @@ export class AuthController {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],
     });
+  }
+
+  // ==========================================
+  // SEND PASSWORD RESET WHATSAPP OTP
+  // 3 requests / 15 minutes
+  // ==========================================
+
+  @Throttle({
+    default: {
+      limit: 3,
+      ttl: 900_000,
+    },
+  })
+  @Post('password-reset/send-otp')
+  @HttpCode(HttpStatus.OK)
+  async sendPasswordResetOtp(@Body() dto: SendPasswordResetOtpDto) {
+    return this.passwordResetService.sendWhatsappOtp(dto.token);
+  }
+
+  // ==========================================
+  // VERIFY PASSWORD RESET WHATSAPP OTP
+  // 5 requests / 15 minutes
+  // ==========================================
+
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 900_000,
+    },
+  })
+  @Post('password-reset/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  async verifyPasswordResetOtp(@Body() dto: VerifyPasswordResetOtpDto) {
+    return this.passwordResetService.verifyWhatsAppOtp(dto.token, dto.otp);
   }
 
   // ==========================================

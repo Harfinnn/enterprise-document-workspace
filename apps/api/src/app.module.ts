@@ -10,6 +10,7 @@ import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { EmailModule } from './email/email.module.js';
+import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
 import { AuditModule } from './audit/audit.module.js';
 
 import { createObserveModule } from '@nestjs/observe';
@@ -37,6 +38,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
     PrismaModule,
     EmailModule,
+    WhatsAppModule,
     AuditModule,
     AuthModule,
     RegistrationModule,

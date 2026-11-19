@@ -2,12 +2,19 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 
 import { hash } from 'bcryptjs';
 import { ConfigService } from '@nestjs/config';
-import { createHash, randomBytes } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  randomInt,
+  timingSafeEqual,
+} from 'node:crypto';
 
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { EmailService } from '../../email/email.service.js';
 import { EmailTemplateService } from '../../email/email-template.service.js';
 import { AuditLogService } from '../../audit/audit-log.service.js';
+import { WhatsAppService } from '../../whatsapp/whatsapp.service.js';
 
 @Injectable()
 export class PasswordResetService {
@@ -19,10 +26,296 @@ export class PasswordResetService {
     private readonly emailTemplateService: EmailTemplateService,
     private readonly configService: ConfigService,
     private readonly auditLogService: AuditLogService,
+    private readonly whatsappService: WhatsAppService,
   ) {}
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private hashOtp(otp: string): string {
+    const secret = this.configService.getOrThrow<string>(
+      'PASSWORD_RESET_OTP_SECRET',
+    );
+
+    return createHmac('sha256', secret).update(otp).digest('hex');
+  }
+
+  private generateOtp(): string {
+    return randomInt(100000, 1000000).toString();
+  }
+
+  private isValidOtpHash(submittedOtp: string, storedHash: string): boolean {
+    const submittedHash = Buffer.from(this.hashOtp(submittedOtp), 'hex');
+    const expectedHash = Buffer.from(storedHash, 'hex');
+
+    return (
+      submittedHash.length === expectedHash.length &&
+      timingSafeEqual(submittedHash, expectedHash)
+    );
+  }
+
+  async sendWhatsappOtp(rawToken: string) {
+    if (
+      typeof rawToken !== 'string' ||
+      rawToken.length < 20 ||
+      rawToken.length > 256
+    ) {
+      throw new BadRequestException(
+        'Token reset password tidak valid atau sudah kedaluwarsa.',
+      );
+    }
+
+    const tokenHash = this.hashToken(rawToken);
+    const now = new Date();
+
+    const challenge = await this.prisma.passwordResetChallenge.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        userId: true,
+        channel: true,
+        expiresAt: true,
+        consumedAt: true,
+        otpLastSentAt: true,
+        user: {
+          select: {
+            phoneNumber: true,
+            phoneNumberVerifiedAt: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+
+    if (
+      !challenge ||
+      challenge.channel !== 'EMAIL' ||
+      challenge.consumedAt !== null ||
+      challenge.expiresAt <= now
+    ) {
+      throw new BadRequestException(
+        'Token reset password tidak valid atau sudah kedaluwarsa.',
+      );
+    }
+
+    if (
+      !challenge.user.isActive ||
+      !challenge.user.phoneNumber ||
+      !challenge.user.phoneNumberVerifiedAt
+    ) {
+      throw new BadRequestException(
+        'Nomor WhatsApp belum terverifikasi. Silakan hubungi IT Support.',
+      );
+    }
+
+    // Jeda pengiriman ulang OTP: 60 detik.
+    if (
+      challenge.otpLastSentAt &&
+      now.getTime() - challenge.otpLastSentAt.getTime() < 60_000
+    ) {
+      throw new BadRequestException(
+        'Silakan tunggu 60 detik sebelum meminta OTP kembali.',
+      );
+    }
+
+    const otp = this.generateOtp();
+    const otpHash = this.hashOtp(otp);
+    const otpExpiresAt = new Date(now.getTime() + 5 * 60_000);
+
+    // Simpan OTP sebelum mengirim pesan.
+    const updated = await this.prisma.passwordResetChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        channel: 'EMAIL',
+        consumedAt: null,
+        expiresAt: { gt: now },
+        OR: [
+          { otpLastSentAt: null },
+          {
+            otpLastSentAt: {
+              lte: new Date(now.getTime() - 60_000),
+            },
+          },
+        ],
+      },
+      data: {
+        otpHash,
+        otpExpiresAt,
+        otpVerifiedAt: null,
+        otpLastSentAt: now,
+        attempts: 0,
+      },
+    });
+
+    if (updated.count !== 1) {
+      throw new BadRequestException(
+        'Permintaan OTP tidak dapat diproses. Silakan coba kembali.',
+      );
+    }
+
+    try {
+      await this.whatsappService.sendMessage(
+        challenge.user.phoneNumber,
+        [
+          'EDW - Password Reset',
+          '',
+          `Kode OTP Anda: ${otp}`,
+          '',
+          'Kode berlaku selama 5 menit.',
+          'Jangan berikan kode ini kepada siapa pun.',
+          'Jika Anda tidak meminta reset password, abaikan pesan ini.',
+        ].join('\n'),
+      );
+    } catch (error) {
+      await this.prisma.passwordResetChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          otpHash,
+          consumedAt: null,
+        },
+        data: {
+          otpHash: null,
+          otpExpiresAt: null,
+          otpLastSentAt: null,
+        },
+      });
+
+      throw error;
+    }
+
+    this.logger.log(
+      `Password reset OTP submitted to WhatsApp for user ID ${challenge.userId}.`,
+    );
+
+    return {
+      message:
+        'Jika permintaan valid, kode OTP telah dikirim ke WhatsApp terdaftar.',
+      expiresInSeconds: 300,
+      resendAvailableInSeconds: 60,
+    };
+  }
+
+  async verifyWhatsAppOtp(rawToken: string, submittedOtp: string) {
+    if (
+      typeof rawToken !== 'string' ||
+      rawToken.length < 20 ||
+      rawToken.length > 256
+    ) {
+      throw new BadRequestException('Token reset password tidak valid.');
+    }
+
+    if (typeof submittedOtp !== 'string' || !/^\d{6}$/.test(submittedOtp)) {
+      throw new BadRequestException('OTP harus terdiri dari 6 digit.');
+    }
+
+    const now = new Date();
+    const tokenHash = this.hashToken(rawToken);
+
+    const challenge = await this.prisma.passwordResetChallenge.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        channel: true,
+        expiresAt: true,
+        consumedAt: true,
+        otpHash: true,
+        otpExpiresAt: true,
+        otpVerifiedAt: true,
+        attempts: true,
+      },
+    });
+
+    if (
+      !challenge ||
+      challenge.channel !== 'EMAIL' ||
+      challenge.consumedAt !== null ||
+      challenge.expiresAt <= now
+    ) {
+      throw new BadRequestException(
+        'Token reset password tidak valid atau sudah kedaluwarsa.',
+      );
+    }
+
+    if (
+      !challenge.otpHash ||
+      !challenge.otpExpiresAt ||
+      challenge.otpExpiresAt <= now
+    ) {
+      throw new BadRequestException(
+        'OTP tidak valid atau sudah kedaluwarsa. Silakan minta OTP baru.',
+      );
+    }
+
+    if (challenge.otpVerifiedAt) {
+      return {
+        message: 'OTP sudah berhasil diverifikasi.',
+        verified: true,
+      };
+    }
+
+    if (challenge.attempts >= 5) {
+      throw new BadRequestException(
+        'Batas percobaan OTP telah tercapai. Silakan minta OTP baru.',
+      );
+    }
+
+    const isValid = this.isValidOtpHash(submittedOtp, challenge.otpHash);
+
+    if (!isValid) {
+      const attempt = await this.prisma.passwordResetChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          consumedAt: null,
+          otpHash: challenge.otpHash,
+          otpExpiresAt: { gt: now },
+          attempts: { lt: 5 },
+          otpVerifiedAt: null,
+        },
+        data: {
+          attempts: { increment: 1 },
+        },
+      });
+
+      if (attempt.count !== 1) {
+        throw new BadRequestException(
+          'OTP tidak valid atau batas percobaan telah tercapai.',
+        );
+      }
+
+      throw new BadRequestException(
+        `OTP salah. Sisa percobaan: ${4 - challenge.attempts}.`,
+      );
+    }
+
+    const verified = await this.prisma.passwordResetChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        consumedAt: null,
+        otpHash: challenge.otpHash,
+        otpExpiresAt: { gt: now },
+        attempts: { lt: 5 },
+        otpVerifiedAt: null,
+      },
+      data: {
+        otpVerifiedAt: now,
+      },
+    });
+
+    if (verified.count !== 1) {
+      throw new BadRequestException(
+        'OTP tidak dapat diverifikasi. Silakan coba kembali.',
+      );
+    }
+
+    this.logger.log(
+      `Password reset WhatsApp OTP verified for challenge ID ${challenge.id}.`,
+    );
+
+    return {
+      message: 'OTP berhasil diverifikasi. Silakan buat password baru.',
+      verified: true,
+    };
   }
 
   async requestEmailReset(
@@ -204,6 +497,8 @@ export class PasswordResetService {
           channel: true,
           expiresAt: true,
           consumedAt: true,
+          otpVerifiedAt: true,
+          otpExpiresAt: true,
         },
       });
 
@@ -226,6 +521,12 @@ export class PasswordResetService {
           channel: 'EMAIL',
           consumedAt: null,
           expiresAt: {
+            gt: now,
+          },
+          otpVerifiedAt: {
+            not: null,
+          },
+          otpExpiresAt: {
             gt: now,
           },
         },

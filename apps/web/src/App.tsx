@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, useEffect, type FormEvent, type ReactNode } from "react";
 import axios from "axios";
 import {
   FileText,
@@ -52,7 +52,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [showForgotInfo, setShowForgotInfo] = useState(false);
 
   // REGISTER
   const [registerMode, setRegisterMode] = useState(false);
@@ -119,12 +118,32 @@ function App() {
   const [resetError, setResetError] = useState("");
   const [resetSuccess, setResetSuccess] = useState(false);
 
+  // PASSWORD RESET - WHATSAPP OTP
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [otpSuccess, setOtpSuccess] = useState("");
+
+  const [resendCountdown, setResendCountdown] = useState(0);
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+
+    const timer = window.setTimeout(() => {
+      setResendCountdown((current) => Math.max(0, current - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [resendCountdown]);
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     setError("");
     setSuccess("");
-    setShowForgotInfo(false);
 
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -332,6 +351,97 @@ function App() {
     }
   };
 
+  const handleSendResetOtp = async () => {
+    setOtpError("");
+    setOtpSuccess("");
+
+    if (!resetToken) {
+      setOtpError("Token reset password tidak ditemukan.");
+      return;
+    }
+
+    setOtpLoading(true);
+
+    try {
+      const response = await axios.post(
+        `${API_URL}/auth/password-reset/send-otp`,
+        { token: resetToken },
+      );
+
+      setOtpSent(true);
+      setOtpVerified(false);
+      setOtp("");
+      setResendCountdown(response.data.resendAvailableInSeconds || 60);
+
+      setOtpSuccess("Kode OTP berhasil dikirim ke WhatsApp terdaftar.");
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+
+        if (status === 429) {
+          setOtpError(
+            "Terlalu banyak permintaan OTP. Silakan coba kembali nanti.",
+          );
+        } else if (!err.response) {
+          setOtpError("Tidak dapat terhubung ke server EDW.");
+        } else {
+          setOtpError(
+            err.response.data?.message || "Gagal mengirim OTP WhatsApp.",
+          );
+        }
+      } else {
+        setOtpError("Terjadi kesalahan yang tidak terduga.");
+      }
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyResetOtp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    setOtpError("");
+    setOtpSuccess("");
+
+    if (!/^\d{6}$/.test(otp)) {
+      setOtpError("Masukkan kode OTP yang terdiri dari 6 digit.");
+      return;
+    }
+
+    setOtpLoading(true);
+
+    try {
+      const response = await axios.post(
+        `${API_URL}/auth/password-reset/verify-otp`,
+        {
+          token: resetToken,
+          otp,
+        },
+      );
+
+      if (response.data.verified) {
+        setOtpVerified(true);
+        setOtpSuccess("OTP berhasil diverifikasi. Silakan buat password baru.");
+      }
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+
+        if (status === 429) {
+          setOtpError("Terlalu banyak percobaan. Silakan coba kembali nanti.");
+        } else if (!err.response) {
+          setOtpError("Tidak dapat terhubung ke server EDW.");
+        } else {
+          setOtpError(err.response.data?.message || "Verifikasi OTP gagal.");
+        }
+      } else {
+        setOtpError("Terjadi kesalahan yang tidak terduga.");
+      }
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   const handleResetPassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -340,6 +450,11 @@ function App() {
 
     if (!resetToken) {
       setResetError("Token reset password tidak ditemukan.");
+      return;
+    }
+
+    if (!otpVerified) {
+      setResetError("Verifikasi OTP WhatsApp terlebih dahulu.");
       return;
     }
 
@@ -771,29 +886,33 @@ function App() {
                   setResetMode(false);
                   setForgotMode(false);
                   setResetError("");
+                  setOtpError("");
+                  setOtpSuccess("");
                 }}
-                className="mb-10 flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-edw-teal"
+                className="mb-8 flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-edw-teal"
               >
                 <ArrowRight className="rotate-180" size={17} />
                 Back to Sign In
               </button>
 
-              <div className="mb-8">
+              <div className="mb-7">
                 <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-edw-teal">
                   Account Security
                 </p>
-
                 <h2 className="text-3xl font-bold tracking-tight text-edw-navy sm:text-4xl">
                   Reset Password
                 </h2>
-
                 <p className="mt-3 text-sm leading-6 text-slate-500">
-                  Buat password baru untuk mengamankan kembali akun EDW Anda.
+                  Verifikasi identitas melalui WhatsApp sebelum membuat password
+                  baru.
                 </p>
               </div>
 
               {resetError && (
-                <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                <div
+                  role="alert"
+                  className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                >
                   {resetError}
                 </div>
               )}
@@ -806,12 +925,10 @@ function App() {
                       Password Berhasil Diperbarui
                     </p>
                   </div>
-
                   <p className="text-sm leading-6 text-slate-600">
                     Password akun EDW Anda sudah berhasil diubah. Silakan masuk
                     kembali menggunakan password baru.
                   </p>
-
                   <button
                     type="button"
                     onClick={() => {
@@ -837,7 +954,6 @@ function App() {
                     Token tidak ditemukan. Silakan ajukan permintaan reset
                     password baru.
                   </p>
-
                   <button
                     type="button"
                     onClick={() => {
@@ -850,117 +966,264 @@ function App() {
                     Request New Reset Link
                   </button>
                 </div>
-              ) : (
-                <form onSubmit={handleResetPassword} className="space-y-5">
-                  <div>
-                    <label
-                      htmlFor="new-password"
-                      className="mb-2 block text-sm font-semibold text-edw-navy"
-                    >
-                      New Password
-                    </label>
-
-                    <div className="relative">
-                      <LockKeyhole
-                        size={19}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
-
-                      <input
-                        id="new-password"
-                        type={showNewPassword ? "text" : "password"}
-                        autoComplete="new-password"
-                        placeholder="Masukkan password baru"
-                        value={newPassword}
-                        onChange={(event) => setNewPassword(event.target.value)}
-                        disabled={resetLoading}
-                        required
-                        minLength={12}
-                        maxLength={128}
-                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-12 text-sm text-edw-navy outline-none transition focus:border-edw-teal focus:ring-4 focus:ring-edw-teal/10"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword((value) => !value)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-edw-teal"
-                      >
-                        {showNewPassword ? (
-                          <EyeOff size={19} />
-                        ) : (
-                          <Eye size={19} />
-                        )}
-                      </button>
+              ) : !otpVerified ? (
+                <div className="space-y-5">
+                  <div className="rounded-xl border border-edw-cyan bg-edw-cyan/20 p-4">
+                    <div className="flex items-center gap-2 text-edw-teal">
+                      <ShieldCheck size={19} />
+                      <p className="text-sm font-semibold">
+                        Verifikasi WhatsApp
+                      </p>
                     </div>
-
-                    <p className="mt-2 text-xs text-slate-400">
-                      Password harus terdiri dari 12–128 karakter.
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Kami akan mengirimkan kode OTP 6 digit ke nomor WhatsApp
+                      yang telah terdaftar dan diverifikasi pada akun Anda.
                     </p>
                   </div>
 
-                  <div>
-                    <label
-                      htmlFor="confirm-password"
-                      className="mb-2 block text-sm font-semibold text-edw-navy"
+                  {!otpSent ? (
+                    <button
+                      type="button"
+                      onClick={handleSendResetOtp}
+                      disabled={otpLoading}
+                      className="flex w-full items-center justify-center gap-3 rounded-xl bg-edw-teal px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-edw-teal/20 transition hover:bg-edw-navy disabled:cursor-not-allowed disabled:opacity-70"
                     >
-                      Confirm New Password
-                    </label>
-
-                    <div className="relative">
-                      <LockKeyhole
-                        size={19}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
-
-                      <input
-                        id="confirm-password"
-                        type={showConfirmPassword ? "text" : "password"}
-                        autoComplete="new-password"
-                        placeholder="Ulangi password baru"
-                        value={confirmPassword}
-                        onChange={(event) =>
-                          setConfirmPassword(event.target.value)
-                        }
-                        disabled={resetLoading}
-                        required
-                        maxLength={128}
-                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-12 text-sm text-edw-navy outline-none transition focus:border-edw-teal focus:ring-4 focus:ring-edw-teal/10"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowConfirmPassword((value) => !value)
-                        }
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-edw-teal"
+                      {otpLoading ? (
+                        <>
+                          <LoaderCircle size={19} className="animate-spin" />{" "}
+                          Mengirim OTP...
+                        </>
+                      ) : (
+                        <>
+                          Kirim OTP WhatsApp <ArrowRight size={19} />
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <>
+                      <form
+                        onSubmit={handleVerifyResetOtp}
+                        className="space-y-4"
                       >
-                        {showConfirmPassword ? (
-                          <EyeOff size={19} />
-                        ) : (
-                          <Eye size={19} />
-                        )}
-                      </button>
+                        <div>
+                          <label
+                            htmlFor="reset-otp"
+                            className="mb-2 block text-sm font-semibold text-edw-navy"
+                          >
+                            Kode OTP WhatsApp
+                          </label>
+                          <input
+                            id="reset-otp"
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            placeholder="Masukkan 6 digit OTP"
+                            value={otp}
+                            onChange={(event) =>
+                              setOtp(
+                                event.target.value
+                                  .replace(/\D/g, "")
+                                  .slice(0, 6),
+                              )
+                            }
+                            disabled={otpLoading}
+                            required
+                            maxLength={6}
+                            pattern="[0-9]{6}"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-4 text-center text-xl font-semibold tracking-[0.5em] text-edw-navy outline-none transition placeholder:text-sm placeholder:font-normal placeholder:tracking-normal focus:border-edw-teal focus:ring-4 focus:ring-edw-teal/10"
+                          />
+                          <p className="mt-2 text-xs text-slate-400">
+                            Kode OTP berlaku selama 5 menit. Jangan bagikan kode
+                            ini kepada siapa pun.
+                          </p>
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={otpLoading || otp.length !== 6}
+                          className="flex w-full items-center justify-center gap-3 rounded-xl bg-edw-teal px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-edw-teal/20 transition hover:bg-edw-navy disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {otpLoading ? (
+                            <>
+                              <LoaderCircle
+                                size={19}
+                                className="animate-spin"
+                              />{" "}
+                              Memverifikasi OTP...
+                            </>
+                          ) : (
+                            <>
+                              Verifikasi OTP <ArrowRight size={19} />
+                            </>
+                          )}
+                        </button>
+                      </form>
+
+                      <div className="text-center">
+                        <p className="text-xs text-slate-500">
+                          Belum menerima kode OTP?
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleSendResetOtp}
+                          disabled={otpLoading || resendCountdown > 0}
+                          className="mt-2 text-sm font-semibold text-edw-teal transition hover:text-edw-navy disabled:cursor-not-allowed disabled:text-slate-400"
+                        >
+                          {otpLoading
+                            ? "Memproses..."
+                            : resendCountdown > 0
+                              ? `Kirim ulang dalam ${resendCountdown} detik`
+                              : "Kirim Ulang OTP"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {otpError && (
+                    <div
+                      role="alert"
+                      className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                    >
+                      {otpError}
                     </div>
+                  )}
+                  {otpSuccess && (
+                    <div
+                      role="status"
+                      className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800"
+                    >
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+                        <p>{otpSuccess}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="mb-5 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <CheckCircle2 size={18} /> OTP berhasil diverifikasi
+                    </div>
+                    <p className="mt-1">
+                      Silakan buat password baru untuk akun EDW Anda.
+                    </p>
                   </div>
 
-                  <button
-                    type="submit"
-                    disabled={resetLoading}
-                    className="flex w-full items-center justify-center gap-3 rounded-xl bg-edw-teal px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-edw-teal/20 transition hover:bg-edw-navy disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {resetLoading ? (
-                      <>
-                        <LoaderCircle size={19} className="animate-spin" />
-                        Updating Password...
-                      </>
-                    ) : (
-                      <>
-                        Update Password
-                        <ArrowRight size={19} />
-                      </>
-                    )}
-                  </button>
-                </form>
+                  <form onSubmit={handleResetPassword} className="space-y-5">
+                    <div>
+                      <label
+                        htmlFor="new-password"
+                        className="mb-2 block text-sm font-semibold text-edw-navy"
+                      >
+                        New Password
+                      </label>
+                      <div className="relative">
+                        <LockKeyhole
+                          size={19}
+                          className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
+                        <input
+                          id="new-password"
+                          type={showNewPassword ? "text" : "password"}
+                          autoComplete="new-password"
+                          placeholder="Masukkan password baru"
+                          value={newPassword}
+                          onChange={(event) =>
+                            setNewPassword(event.target.value)
+                          }
+                          disabled={resetLoading}
+                          required
+                          minLength={12}
+                          maxLength={128}
+                          className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-12 text-sm text-edw-navy outline-none transition focus:border-edw-teal focus:ring-4 focus:ring-edw-teal/10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword((value) => !value)}
+                          aria-label={
+                            showNewPassword
+                              ? "Sembunyikan password"
+                              : "Tampilkan password"
+                          }
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-edw-teal"
+                        >
+                          {showNewPassword ? (
+                            <EyeOff size={19} />
+                          ) : (
+                            <Eye size={19} />
+                          )}
+                        </button>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-400">
+                        Password harus terdiri dari 12–128 karakter.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="confirm-password"
+                        className="mb-2 block text-sm font-semibold text-edw-navy"
+                      >
+                        Confirm New Password
+                      </label>
+                      <div className="relative">
+                        <LockKeyhole
+                          size={19}
+                          className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
+                        <input
+                          id="confirm-password"
+                          type={showConfirmPassword ? "text" : "password"}
+                          autoComplete="new-password"
+                          placeholder="Ulangi password baru"
+                          value={confirmPassword}
+                          onChange={(event) =>
+                            setConfirmPassword(event.target.value)
+                          }
+                          disabled={resetLoading}
+                          required
+                          maxLength={128}
+                          className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-12 text-sm text-edw-navy outline-none transition focus:border-edw-teal focus:ring-4 focus:ring-edw-teal/10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowConfirmPassword((value) => !value)
+                          }
+                          aria-label={
+                            showConfirmPassword
+                              ? "Sembunyikan password"
+                              : "Tampilkan password"
+                          }
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-edw-teal"
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff size={19} />
+                          ) : (
+                            <Eye size={19} />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={resetLoading}
+                      className="flex w-full items-center justify-center gap-3 rounded-xl bg-edw-teal px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-edw-teal/20 transition hover:bg-edw-navy disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {resetLoading ? (
+                        <>
+                          <LoaderCircle size={19} className="animate-spin" />{" "}
+                          Updating Password...
+                        </>
+                      ) : (
+                        <>
+                          Update Password <ArrowRight size={19} />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </>
               )}
 
               <div className="mt-8 flex items-center justify-center gap-2 text-xs text-slate-500">
@@ -989,8 +1252,9 @@ function App() {
                 </h2>
 
                 <p className="mt-3 text-sm leading-6 text-slate-500">
-                  Masukkan alamat email yang terdaftar. Kami akan mengirimkan
-                  tautan untuk mengatur ulang password Anda.
+                  Masukkan email yang terdaftar. Tautan reset akan dikirim
+                  melalui email, kemudian Anda perlu memverifikasi OTP melalui
+                  WhatsApp terdaftar.
                 </p>
               </div>
 
@@ -1009,8 +1273,10 @@ function App() {
 
                   <p className="text-sm leading-6 text-slate-600">
                     Jika alamat email tersebut terdaftar dan memenuhi
-                    persyaratan, instruksi pemulihan password akan dikirimkan.
-                    Silakan periksa inbox atau folder spam Anda.
+                    persyaratan, tautan reset password akan dikirimkan. Buka
+                    tautan dari email tersebut, lalu ikuti proses verifikasi OTP
+                    melalui WhatsApp untuk membuat password baru. Periksa juga
+                    folder spam jika email belum terlihat.
                   </p>
 
                   <button
@@ -1317,13 +1583,6 @@ function App() {
                     <p className="font-semibold">Autentikasi berhasil</p>
                     <p className="mt-1">{success}</p>
                   </div>
-                </div>
-              )}
-
-              {showForgotInfo && (
-                <div className="mb-5 rounded-xl border border-edw-cyan bg-edw-cyan/20 p-4 text-sm text-edw-navy">
-                  Fitur pemulihan password melalui Email dan WhatsApp akan
-                  tersedia pada tahap Forgot Password.
                 </div>
               )}
 

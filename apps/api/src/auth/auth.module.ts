@@ -9,6 +9,8 @@ import { AccountActivationService } from './services/account-activation.service.
 
 import { EmailModule } from "../email/email.module.js";
 
+import { WhatsAppModule } from '../whatsapp/whatsapp.module.js';
+
 import { PassportModule } from "@nestjs/passport";
 import { JwtStrategy } from "./strategies/jwt.strategy.js";
 
@@ -22,6 +24,7 @@ import { EmailVerificationService } from "./services/email-verification.service.
 @Module({
   imports: [
     EmailModule,
+    WhatsAppModule,
 
     PassportModule.register({
         defaultStrategy: "jwt",

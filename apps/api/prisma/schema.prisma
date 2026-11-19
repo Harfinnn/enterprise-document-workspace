@@ -96,6 +96,8 @@ model User {
   fullName        String
   email           String    @unique
   emailVerifiedAt DateTime?
+  phoneNumber         String?
+  phoneNumberVerifiedAt DateTime?
   passwordHash    String
   isActive        Boolean   @default(true)
   
@@ -434,6 +436,13 @@ model PasswordResetChallenge {
   expiresAt   DateTime
   consumedAt  DateTime?
   attempts    Int                  @default(0)
+
+  // WhatsApp OTP
+  otpHash       String?
+  otpExpiresAt  DateTime?
+  otpVerifiedAt DateTime?
+  otpLastSentAt DateTime?
+
   createdAt   DateTime             @default(now())
   requestedIp String?
   userAgent   String?

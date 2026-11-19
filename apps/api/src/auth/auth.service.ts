@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 
 import { JwtService } from '@nestjs/jwt';
@@ -12,6 +13,7 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { AuditLogService } from '../audit/audit-log.service.js';
+import { WhatsAppService } from '../whatsapp/whatsapp.service.js';
 
 @Injectable()
 export class AuthService {
@@ -20,6 +22,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly auditLogService: AuditLogService,
+    private readonly whatsappService: WhatsAppService,
   ) {}
 
   private hashToken(token: string): string {
@@ -618,6 +621,113 @@ export class AuthService {
 
     return {
       message: 'Logout berhasil.',
+    };
+  }
+
+  async updatePhoneNumber(userId: string, phoneNumber: string) {
+    // Normalisasi nomor ke format 628xxxxxxxxxx
+    let normalizedPhone = phoneNumber.replace(/\D/g, '');
+
+    if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = `62${normalizedPhone.slice(1)}`;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        phoneNumber: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Pengguna tidak ditemukan.');
+    }
+
+    // Jika nomor tidak berubah, pertahankan status verifikasi.
+    if (user.phoneNumber === normalizedPhone) {
+      return {
+        message: 'Nomor WhatsApp tidak mengalami perubahan.',
+        phoneNumber: user.phoneNumber,
+      };
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        phoneNumber: normalizedPhone,
+        phoneNumberVerifiedAt: null,
+      },
+      select: {
+        id: true,
+        phoneNumber: true,
+        phoneNumberVerifiedAt: true,
+      },
+    });
+
+    await this.auditLogService.log({
+      actorUserId: userId,
+      action: 'PROFILE_PHONE_UPDATED',
+      entityType: 'USER',
+      entityId: userId,
+      metadata: {
+        phoneNumberChanged: true,
+        previousPhoneNumberExists: Boolean(user.phoneNumber),
+      },
+    });
+
+    return {
+      message: 'Nomor WhatsApp berhasil diperbarui.',
+      user: updatedUser,
+    };
+  }
+
+  async testWhatsApp(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        phoneNumber: true,
+        phoneNumberVerifiedAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Pengguna tidak ditemukan.');
+    }
+
+    if (!user.phoneNumber) {
+      throw new NotFoundException('Nomor WhatsApp belum terdaftar di profil.');
+    }
+
+    const result = await this.whatsappService.sendMessage(
+      user.phoneNumber,
+      [
+        'Halo!',
+        '',
+        'Ini adalah pesan pengujian dari Enterprise Document Workspace (EDW).',
+        '',
+        'Integrasi WhatsApp berhasil terhubung.',
+        '',
+        'Pesan ini merupakan pesan otomatis untuk pengujian sistem.',
+      ].join('\n'),
+    );
+
+    await this.auditLogService.log({
+      actorUserId: userId,
+      action: 'WHATSAPP_TEST_SENT',
+      entityType: 'USER',
+      entityId: userId,
+      metadata: {
+        destination: user.phoneNumber,
+        providerAccepted: result.success,
+      },
+    });
+
+    return {
+      message: 'Permintaan pengiriman WhatsApp berhasil diproses.',
+      phoneNumber: user.phoneNumber,
+      result,
     };
   }
 }
