@@ -284,6 +284,7 @@ export class RegistrationService {
       // Hanya role operasional yang boleh diberikan melalui approval.
       // IT_SUPERADMIN tidak boleh diberikan melalui registrasi publik.
       const allowedRoleCodes = [
+        'USER',
         'DOCUMENT_CONTROL',
         'MANAGEMENT',
         'DEPARTMENT_HEAD',

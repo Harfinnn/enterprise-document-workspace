@@ -1,4 +1,3 @@
-
 import {
   BadRequestException,
   ConflictException,
@@ -70,9 +69,7 @@ export class UsersService {
           }
         : {}),
 
-      ...(query.departmentId
-        ? { departmentId: query.departmentId }
-        : {}),
+      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
 
       ...(query.roleId
         ? {
@@ -115,6 +112,8 @@ export class UsersService {
           email: true,
           isActive: true,
           emailVerifiedAt: true,
+          phoneNumber: true,
+          phoneNumberVerifiedAt: true,
           createdAt: true,
           updatedAt: true,
           department: {
@@ -166,6 +165,8 @@ export class UsersService {
         email: true,
         isActive: true,
         emailVerifiedAt: true,
+        phoneNumber: true,
+        phoneNumberVerifiedAt: true,
         departmentId: true,
         createdAt: true,
         updatedAt: true,
@@ -386,11 +387,7 @@ export class UsersService {
       throw new NotFoundException('Pengguna tidak ditemukan.');
     }
 
-    if (
-      existing.userRoles.some(
-        (item) => item.role.code === 'IT_SUPERADMIN',
-      )
-    ) {
+    if (existing.userRoles.some((item) => item.role.code === 'IT_SUPERADMIN')) {
       throw new ForbiddenException(
         'Role IT_SUPERADMIN tidak dapat diubah melalui pengelolaan pengguna.',
       );
@@ -413,9 +410,7 @@ export class UsersService {
       );
     }
 
-    const previousRoles = existing.userRoles.map(
-      (item) => item.role.code,
-    );
+    const previousRoles = existing.userRoles.map((item) => item.role.code);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.userRole.deleteMany({
@@ -489,11 +484,7 @@ export class UsersService {
       throw new NotFoundException('Pengguna tidak ditemukan.');
     }
 
-    if (
-      existing.userRoles.some(
-        (item) => item.role.code === 'IT_SUPERADMIN',
-      )
-    ) {
+    if (existing.userRoles.some((item) => item.role.code === 'IT_SUPERADMIN')) {
       throw new ForbiddenException(
         'Status akun IT_SUPERADMIN tidak dapat diubah melalui fitur ini.',
       );
@@ -565,10 +556,7 @@ export class UsersService {
   // RESEND ACCOUNT ACTIVATION EMAIL
   // ==========================================
 
-  async resendActivation(
-    id: string,
-    metadata: UserManagementMetadata,
-  ) {
+  async resendActivation(id: string, metadata: UserManagementMetadata) {
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
@@ -592,67 +580,55 @@ export class UsersService {
 
     const rawToken = randomBytes(32).toString('base64url');
 
-    const tokenHash = createHash('sha256')
-      .update(rawToken)
-      .digest('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
 
     const expiresInMinutes = 30;
 
-    const expiresAt = new Date(
-      Date.now() + expiresInMinutes * 60 * 1000,
-    );
+    const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
     const webUrl = process.env.EDW_WEB_URL;
 
     if (!webUrl) {
-      throw new BadRequestException(
-        'Konfigurasi EDW_WEB_URL belum tersedia.',
-      );
+      throw new BadRequestException('Konfigurasi EDW_WEB_URL belum tersedia.');
     }
 
     const activationUrl =
       `${webUrl.replace(/\/$/, '')}/activate-account` +
       `?token=${encodeURIComponent(rawToken)}`;
 
-    const challenge = await this.prisma.$transaction(
-      async (tx) => {
-        const currentUser = await tx.user.findUnique({
-          where: { id },
-          select: {
-            isActive: true,
-            emailVerifiedAt: true,
-          },
-        });
+    const challenge = await this.prisma.$transaction(async (tx) => {
+      const currentUser = await tx.user.findUnique({
+        where: { id },
+        select: {
+          isActive: true,
+          emailVerifiedAt: true,
+        },
+      });
 
-        if (
-          !currentUser ||
-          currentUser.isActive ||
-          currentUser.emailVerifiedAt
-        ) {
-          throw new BadRequestException(
-            'Status akun sudah berubah. Email aktivasi tidak dapat dikirim.',
-          );
-        }
+      if (!currentUser || currentUser.isActive || currentUser.emailVerifiedAt) {
+        throw new BadRequestException(
+          'Status akun sudah berubah. Email aktivasi tidak dapat dikirim.',
+        );
+      }
 
-        await tx.accountActivationChallenge.updateMany({
-          where: {
-            userId: id,
-            consumedAt: null,
-          },
-          data: {
-            consumedAt: new Date(),
-          },
-        });
+      await tx.accountActivationChallenge.updateMany({
+        where: {
+          userId: id,
+          consumedAt: null,
+        },
+        data: {
+          consumedAt: new Date(),
+        },
+      });
 
-        return tx.accountActivationChallenge.create({
-          data: {
-            userId: id,
-            tokenHash,
-            expiresAt,
-          },
-        });
-      },
-    );
+      return tx.accountActivationChallenge.create({
+        data: {
+          userId: id,
+          tokenHash,
+          expiresAt,
+        },
+      });
+    });
 
     try {
       const template = this.emailTemplate.accountActivation({

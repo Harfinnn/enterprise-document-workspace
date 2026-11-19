@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
   RefreshCw,
@@ -10,15 +10,27 @@ import {
   Building2,
 } from "lucide-react";
 
-import { getUsers, getUserDetail } from "./user-management.service";
+import {
+  getUsers,
+  getUserDetail,
+  getDepartments,
+  getUserRoles,
+  updateUserStatus,
+  resendUserActivation,
+} from "./user-management.service";
 
 import UserDetail from "./UserDetail";
 
 import UserEdit from "./UserEdit";
 
-import type { ManagedUser, UserPaginationMeta } from "./user-management.types";
+import type {
+  ManagedUser,
+  UserPaginationMeta,
+  ManagedRole,
+  ManagedDepartment,
+} from "./user-management.types";
 
-type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
+type StatusFilter = "ALL" | "ACTIVE" | "PENDING_ACTIVATION" | "INACTIVE";
 
 const initialMeta: UserPaginationMeta = {
   page: 1,
@@ -33,6 +45,12 @@ export default function UserManagement() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+
+  const [departments, setDepartments] = useState<ManagedDepartment[]>([]);
+  const [roles, setRoles] = useState<ManagedRole[]>([]);
+
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -57,69 +75,100 @@ export default function UserManagement() {
     }
   };
 
-  const fetchUsers = useCallback(async (targetPage: number) => {
-    try {
-      const response = await getUsers(targetPage, 10);
+  const requestId = useRef(0);
 
-      setUsers(response.data);
-      setMeta(response.meta);
+  const fetchUsers = useCallback(
+    async (targetPage: number) => {
+      const currentRequestId = ++requestId.current;
+
+      setLoading(true);
       setError("");
-    } catch {
-      setError("Gagal mengambil data pengguna.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadUsers = async () => {
       try {
-        const response = await getUsers(1, 10);
+        const response = await getUsers(
+          targetPage,
+          10,
+          search,
+          statusFilter === "ALL" ? undefined : statusFilter,
+          {
+            departmentId: departmentFilter || undefined,
+            roleId: roleFilter || undefined,
+          },
+        );
 
-        if (cancelled) return;
+        // Abaikan hasil request lama.
+        if (currentRequestId !== requestId.current) return;
 
         setUsers(response.data);
         setMeta(response.meta);
-        setError("");
       } catch {
-        if (!cancelled) {
-          setError("Gagal mengambil data pengguna.");
-        }
+        if (currentRequestId !== requestId.current) return;
+
+        setError("Gagal mengambil data pengguna.");
       } finally {
-        if (!cancelled) {
+        if (currentRequestId === requestId.current) {
           setLoading(false);
         }
       }
+    },
+    [search, statusFilter, departmentFilter, roleFilter],
+  );
+
+  const refreshUserAfterAction = async (user: ManagedUser) => {
+    // Refresh tabel
+    await fetchUsers(meta.page);
+
+    // Refresh detail user agar status terbaru tampil
+    try {
+      const response = await getUserDetail(user.id);
+      setSelectedUser(response.data);
+    } catch {
+      setDetailError(
+        "Aksi berhasil, tetapi gagal memperbarui detail pengguna.",
+      );
+    }
+  };
+
+  const handleActivateUser = async (user: ManagedUser) => {
+    await updateUserStatus(user.id, true);
+    await refreshUserAfterAction(user);
+  };
+
+  const handleDeactivateUser = async (user: ManagedUser) => {
+    await updateUserStatus(user.id, false);
+    await refreshUserAfterAction(user);
+  };
+
+  const handleResendActivation = async (user: ManagedUser) => {
+    await resendUserActivation(user.id);
+    await refreshUserAfterAction(user);
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void fetchUsers(1);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    const loadFilterOptions = async () => {
+      try {
+        const [departmentResponse, roleResponse] = await Promise.all([
+          getDepartments(),
+          getUserRoles(),
+        ]);
+
+        setDepartments(departmentResponse.data);
+        setRoles(roleResponse.data);
+      } catch (error) {
+        console.error("Gagal mengambil opsi filter pengguna:", error);
+      }
     };
 
-    void loadUsers();
-
-    return () => {
-      cancelled = true;
-    };
+    void loadFilterOptions();
   }, []);
-
-  const filteredUsers = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-
-    return users.filter((user) => {
-      const matchesSearch =
-        !keyword ||
-        user.fullName.toLowerCase().includes(keyword) ||
-        user.email.toLowerCase().includes(keyword) ||
-        (user.employeeNo || "").toLowerCase().includes(keyword);
-
-      const matchesStatus =
-        statusFilter === "ALL" ||
-        (statusFilter === "ACTIVE" && user.isActive) ||
-        (statusFilter === "INACTIVE" && !user.isActive);
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [users, search, statusFilter]);
-
   const formatDate = (value: string | null) => {
     if (!value) return "-";
 
@@ -140,6 +189,30 @@ export default function UserManagement() {
     }
 
     return "-";
+  };
+
+  const getUserStatus = (user: ManagedUser) => {
+    if (!user.emailVerifiedAt) {
+      return {
+        label: "Pending Activation",
+        className: "bg-amber-50 text-amber-700",
+        dotClassName: "bg-amber-500",
+      };
+    }
+
+    if (user.isActive) {
+      return {
+        label: "Active",
+        className: "bg-emerald-50 text-emerald-700",
+        dotClassName: "bg-emerald-500",
+      };
+    }
+
+    return {
+      label: "Inactive",
+      className: "bg-slate-100 text-slate-500",
+      dotClassName: "bg-slate-400",
+    };
   };
 
   return (
@@ -233,6 +306,33 @@ export default function UserManagement() {
             </div>
 
             <select
+              value={departmentFilter}
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-600 outline-none focus:border-edw-teal"
+            >
+              <option value="">All Departments</option>
+
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-600 outline-none focus:border-edw-teal"
+            >
+              <option value="">All Roles</option>
+              {roles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+
+            <select
               value={statusFilter}
               onChange={(event) =>
                 setStatusFilter(event.target.value as StatusFilter)
@@ -241,6 +341,7 @@ export default function UserManagement() {
             >
               <option value="ALL">All Status</option>
               <option value="ACTIVE">Active</option>
+              <option value="PENDING_ACTIVATION">Pending Activation</option>
               <option value="INACTIVE">Inactive</option>
             </select>
 
@@ -317,7 +418,7 @@ export default function UserManagement() {
                     Data belum dapat ditampilkan.
                   </td>
                 </tr>
-              ) : filteredUsers.length === 0 ? (
+              ) : users.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-5 py-16 text-center">
                     <Users size={28} className="mx-auto mb-3 text-slate-300" />
@@ -332,7 +433,7 @@ export default function UserManagement() {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => (
+                users.map((user) => (
                   <tr key={user.id} className="transition hover:bg-slate-50/70">
                     {/* User */}
                     <td className="px-5 py-4">
@@ -394,21 +495,20 @@ export default function UserManagement() {
 
                     {/* Account Status */}
                     <td className="px-5 py-4">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          user.isActive
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            user.isActive ? "bg-emerald-500" : "bg-slate-400"
-                          }`}
-                        />
+                      {(() => {
+                        const status = getUserStatus(user);
 
-                        {user.isActive ? "Active" : "Inactive"}
-                      </span>
+                        return (
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${status.className}`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${status.dotClassName}`}
+                            />
+                            {status.label}
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* Email Verification */}
@@ -472,6 +572,9 @@ export default function UserManagement() {
                 setSelectedUser(null);
                 setEditingUser(user);
               }}
+              onActivate={handleActivateUser}
+              onDeactivate={handleDeactivateUser}
+              onResendActivation={handleResendActivation}
             />
           )}
 

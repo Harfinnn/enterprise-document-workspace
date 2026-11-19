@@ -9,8 +9,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { PermissionsGuard } from '../auth/guards/permissions.guard.js';
 
+import { AuthorizationModule } from "../authorization/authorization.module.js";
+
 @Module({
-  imports: [EmailModule],
+  imports: [EmailModule, AuthorizationModule],
   controllers: [UsersController],
   providers: [
     UsersService,

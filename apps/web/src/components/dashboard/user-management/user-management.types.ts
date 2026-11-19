@@ -12,6 +12,8 @@ export interface ManagedUser {
   employeeNo: string | null;
   fullName: string;
   email: string;
+  phoneNumber: string | null;
+  phoneNumberVerifiedAt: string | null;
   isActive: boolean;
   emailVerifiedAt: string | null;
   createdAt: string;

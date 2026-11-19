@@ -4,6 +4,7 @@ import {
   IsUUID,
   MaxLength,
   MinLength,
+  Matches,
 } from 'class-validator';
 
 export class UpdateUserDto {
@@ -11,6 +12,9 @@ export class UpdateUserDto {
   @IsString()
   @MinLength(3)
   @MaxLength(150)
+  @Matches(/\S/, {
+    message: 'Nama lengkap tidak boleh kosong.',
+  })
   fullName?: string;
 
   @IsOptional()
@@ -19,6 +23,6 @@ export class UpdateUserDto {
   employeeNo?: string | null;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   departmentId?: string | null;
 }

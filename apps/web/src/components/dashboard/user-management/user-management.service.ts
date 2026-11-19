@@ -11,9 +11,19 @@ import type {
 const API_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
 
+type UserStatus = "ACTIVE" | "PENDING_ACTIVATION" | "INACTIVE";
+
+export interface UserFilterParams {
+  departmentId?: string;
+  roleId?: string;
+}
+
 export async function getUsers(
   page = 1,
   limit = 10,
+  search?: string,
+  status?: UserStatus,
+  filters?: UserFilterParams,
 ): Promise<UserListResponse> {
   const accessToken = sessionStorage.getItem("edw_access_token");
 
@@ -21,6 +31,10 @@ export async function getUsers(
     params: {
       page,
       limit,
+      ...(search?.trim() ? { search: search.trim() } : {}),
+      ...(status ? { status } : {}),
+      ...(filters?.departmentId ? { departmentId: filters.departmentId } : {}),
+      ...(filters?.roleId ? { roleId: filters.roleId } : {}),
     },
     headers: {
       Authorization: `Bearer ${accessToken}`,

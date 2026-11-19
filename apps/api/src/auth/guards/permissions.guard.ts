@@ -12,12 +12,16 @@ import {
 import type {
   AuthenticatedUser,
 } from "../decorators/current-user.decorator.js";
+import { PermissionService } from "../../authorization/services/permission.service.js";
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly permissionService: PermissionService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredPermissions =
       this.reflector.getAllAndOverride<string[]>(
         PERMISSIONS_KEY,
@@ -35,12 +39,16 @@ export class PermissionsGuard implements CanActivate {
     const user = request.user;
 
     if (!user) {
-      throw new ForbiddenException("Informasi pengguna tidak tersedia.");
+      throw new ForbiddenException(
+        "Informasi pengguna tidak tersedia.",
+      );
     }
 
-    const hasAllPermissions = requiredPermissions.every(
-      (permission) => user.permissions.includes(permission),
-    );
+    const hasAllPermissions =
+      await this.permissionService.hasAllPermissions(
+        user.id,
+        requiredPermissions,
+      );
 
     if (!hasAllPermissions) {
       throw new ForbiddenException(

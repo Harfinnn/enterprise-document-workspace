@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 
 import DashboardSidebar from "./dashboard/DashboardSidebar";
@@ -5,6 +6,7 @@ import DashboardHeader from "./dashboard/DashboardHeader";
 import navigation from "./dashboard/dashboard.navigation";
 import DashboardOverview from "./dashboard/DashboardOverview";
 import UserManagement from "./dashboard/user-management/UserManagement";
+import RegistrationManagement from "./dashboard/registration-management/RegistrationManagement";
 import type { DashboardUser } from "./dashboard/dashboard.types";
 
 interface DashboardLayoutProps {
@@ -44,6 +46,8 @@ export default function DashboardLayout({
         <main className="flex-1 overflow-y-auto p-5 sm:p-8">
           {activeMenu === "overview" ? (
             <DashboardOverview user={user} onNavigate={setActiveMenu} />
+          ) : activeMenu === "registrations" ? (
+            <RegistrationManagement />
           ) : activeMenu === "users" ? (
             <UserManagement />
           ) : (
@@ -51,9 +55,11 @@ export default function DashboardLayout({
               <p className="text-sm font-semibold text-edw-teal">
                 Administration Module
               </p>
+
               <h1 className="mt-2 text-2xl font-bold text-edw-navy">
                 {currentMenu?.label}
               </h1>
+
               <p className="mt-3 text-sm text-slate-500">
                 Modul ini akan kita implementasikan pada tahap pengembangan
                 berikutnya.

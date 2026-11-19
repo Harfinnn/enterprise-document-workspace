@@ -1,3 +1,4 @@
+
 import {
   IsIn,
   IsInt,
@@ -10,6 +11,11 @@ import {
 } from 'class-validator';
 
 import { Type } from 'class-transformer';
+
+export type UserStatus =
+  | 'ACTIVE'
+  | 'PENDING_ACTIVATION'
+  | 'INACTIVE';
 
 export class UsersQueryDto {
   @IsOptional()
@@ -32,13 +38,13 @@ export class UsersQueryDto {
 
   @IsOptional()
   @IsIn(['ACTIVE', 'PENDING_ACTIVATION', 'INACTIVE'])
-  status?: string;
+  status?: UserStatus;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   departmentId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   roleId?: string;
 }

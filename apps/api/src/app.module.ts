@@ -16,6 +16,10 @@ import { AuditModule } from './audit/audit.module.js';
 import { createObserveModule } from '@nestjs/observe';
 import { RegistrationModule } from './registration/registration.module.js';
 
+import { AuthorizationModule } from './authorization/authorization.module.js';
+
+import { AccessControlModule } from './access-control/access-control.module.js';
+
 import { UsersModule } from './users/users.module.js';
 
 import { DashboardModule } from './dashboard/dashboard.module.js';
@@ -44,6 +48,8 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     RegistrationModule,
     UsersModule,
     DashboardModule,
+    AuthorizationModule,
+    AccessControlModule,
   ],
 
   controllers: [

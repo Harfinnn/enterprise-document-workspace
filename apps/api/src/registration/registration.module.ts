@@ -10,8 +10,10 @@ import { PermissionsGuard } from "../auth/guards/permissions.guard.js";
 
 import { EmailModule } from "../email/email.module.js";
 
+import { AuthorizationModule } from '../authorization/authorization.module.js';
+
 @Module({
-  imports: [EmailModule],
+  imports: [EmailModule, AuthorizationModule],
   controllers: [RegistrationController],
   providers: [
     RegistrationService,

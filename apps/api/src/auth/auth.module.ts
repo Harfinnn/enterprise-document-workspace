@@ -21,10 +21,13 @@ import { PasswordResetService } from "./services/password-reset.service.js";
 
 import { EmailVerificationService } from "./services/email-verification.service.js";
 
+import { AuthorizationModule } from "../authorization/authorization.module.js";
+
 @Module({
   imports: [
     EmailModule,
     WhatsAppModule,
+    AuthorizationModule,
 
     PassportModule.register({
         defaultStrategy: "jwt",

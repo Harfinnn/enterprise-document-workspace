@@ -56,23 +56,6 @@ export default function DashboardSidebar({
           </button>
         </div>
 
-        {/* Workspace Information */}
-        <div className="border-b border-white/10 px-6 py-5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-            Workspace
-          </p>
-
-          <div className="mt-3 rounded-xl border border-edw-teal/30 bg-edw-teal/10 p-3">
-            <p className="text-xs font-semibold text-edw-cyan">
-              Administrator Console
-            </p>
-
-            <p className="mt-1 text-xs text-slate-400">
-              IT SuperAdmin Workspace
-            </p>
-          </div>
-        </div>
-
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-5">
           <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">

@@ -6,12 +6,18 @@ import {
   Files,
   ClipboardList,
   Settings,
+  ClipboardCheck,
 } from "lucide-react";
 
 import type { NavigationItem } from "./dashboard.types";
 
 const navigation: NavigationItem[] = [
   { label: "Overview", icon: LayoutDashboard, key: "overview" },
+  {
+    label: "Registration Management",
+    icon: ClipboardCheck,
+    key: "registrations",
+  },
   { label: "User Management", icon: Users, key: "users" },
   { label: "Role & Permission", icon: ShieldCheck, key: "roles" },
   { label: "Departments", icon: Building2, key: "departments" },
