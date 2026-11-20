@@ -28,6 +28,7 @@ interface LoginResponse {
     fullName: string;
     email: string;
     departmentId?: string | null;
+    department?: string | null;
     roles: {
       code: string;
       name: string;
@@ -165,19 +166,6 @@ function App() {
 
       const data = response.data;
 
-      const isSuperAdmin = data.user.roles.some(
-        (role) => role.code === "IT_SUPERADMIN",
-      );
-
-      if (!isSuperAdmin) {
-        setError(
-          "Dashboard untuk role Anda belum tersedia. Silakan hubungi administrator IT.",
-        );
-        return;
-      }
-
-      // Simpan token selama sesi browser berlangsung.
-      // Untuk produksi, HttpOnly Secure Cookie lebih disarankan.
       sessionStorage.setItem("edw_access_token", data.accessToken);
       sessionStorage.setItem("edw_refresh_token", data.refreshToken);
       sessionStorage.setItem("edw_user", JSON.stringify(data.user));

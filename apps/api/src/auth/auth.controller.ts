@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Delete,
   HttpCode,
   HttpStatus,
   Post,
@@ -47,7 +48,13 @@ import { AccountActivationService } from './services/account-activation.service.
 import { SendPasswordResetOtpDto } from './dto/send-password-reset-otp.dto.js';
 import { VerifyPasswordResetOtpDto } from './dto/verify-password-reset-otp.dto.js';
 
+import { PhoneVerificationService } from './phone-verification.service.js';
+
+import { VerifyPhoneOtpDto } from './dto/verify-phone-otp.dto.js';
+
 import { WhatsAppService } from '../whatsapp/whatsapp.service.js';
+
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
 
 @Controller('auth')
 export class AuthController {
@@ -58,6 +65,7 @@ export class AuthController {
     private readonly emailVerificationService: EmailVerificationService,
     private readonly accountActivationService: AccountActivationService,
     private readonly whatsappService: WhatsAppService,
+    private readonly phoneVerificationService: PhoneVerificationService,
   ) {}
 
   // ==========================================
@@ -99,10 +107,12 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  getProfile(@CurrentUser() user: AuthenticatedUser) {
+  async getProfile(@CurrentUser() user: AuthenticatedUser) {
+    const profile = await this.authService.getProfile(user.id);
+
     return {
       message: 'Profil berhasil diambil.',
-      user,
+      user: profile,
     };
   }
 
@@ -358,5 +368,55 @@ export class AuthController {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],
     });
+  }
+
+  @Throttle({
+    default: {
+      limit: 3,
+      ttl: 900_000,
+    },
+  })
+  @Post('profile/phone/send-otp')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async sendPhoneVerificationOtp(@CurrentUser() user: AuthenticatedUser) {
+    return this.phoneVerificationService.sendOtp(user.id);
+  }
+
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 900_000,
+    },
+  })
+  @Post('profile/phone/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async verifyPhoneOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyPhoneOtpDto,
+  ) {
+    return this.phoneVerificationService.verifyOtp(user.id, dto.otp);
+  }
+
+  @Delete('profile/phone/pending')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async cancelPendingPhoneNumber(@CurrentUser() user: AuthenticatedUser) {
+    return this.phoneVerificationService.cancelPendingPhoneNumber(user.id);
+  }
+
+  // ==========================================
+  // UPDATE USER PROFILE
+  // ==========================================
+
+  @Patch('profile')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(user.id, dto);
   }
 }

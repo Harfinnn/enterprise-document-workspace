@@ -3,9 +3,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { Prisma } from '../generated/prisma/client.js';
 import { AuditLogService } from '../audit/audit-log.service.js';
+import { CreateRoleDto } from './dto/create-role.dto.js';
+import { UpdateRoleDto } from './dto/update-role.dto.js';
 
 @Injectable()
 export class AccessControlService {
@@ -14,9 +18,6 @@ export class AccessControlService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  /**
-   * Get all roles with user and permission counts.
-   */
   async findAllRoles() {
     const roles = await this.prisma.role.findMany({
       orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
@@ -118,9 +119,6 @@ export class AccessControlService {
     };
   }
 
-  /**
-   * Replace all permissions assigned to a role.
-   */
   async assignRolePermissions(
     roleId: string,
     permissionIds: string[],
@@ -171,6 +169,28 @@ export class AccessControlService {
 
     // 4. Replace role permissions atomically
     await this.prisma.$transaction(async (tx) => {
+      // Revalidate role inside transaction
+      const currentRole = await tx.role.findUnique({
+        where: {
+          id: roleId,
+        },
+        select: {
+          id: true,
+          isSystem: true,
+        },
+      });
+
+      if (!currentRole) {
+        throw new NotFoundException('Role tidak ditemukan.');
+      }
+
+      if (currentRole.isSystem) {
+        throw new ForbiddenException(
+          'Permission pada system role tidak dapat diubah melalui API ini.',
+        );
+      }
+
+      // Replace role permissions atomically
       await tx.rolePermission.deleteMany({
         where: {
           roleId,
@@ -203,5 +223,258 @@ export class AccessControlService {
 
     // 6. Return updated state
     return this.findRolePermissions(roleId);
+  }
+
+  async createRole(dto: CreateRoleDto, actorUserId: string) {
+    const existingRole = await this.prisma.role.findUnique({
+      where: {
+        code: dto.code,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingRole) {
+      throw new ConflictException(
+        `Role dengan code ${dto.code} sudah tersedia.`,
+      );
+    }
+
+    let role;
+
+    try {
+      role = await this.prisma.role.create({
+        data: {
+          code: dto.code,
+          name: dto.name,
+          description: dto.description ?? null,
+          isSystem: false,
+        },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          description: true,
+          isSystem: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          `Role dengan code ${dto.code} sudah tersedia.`,
+        );
+      }
+
+      throw error;
+    }
+
+    await this.auditLogService.log({
+      actorUserId,
+      action: 'ROLE_CREATED',
+      entityType: 'ROLE',
+      entityId: role.id,
+      metadata: {
+        code: role.code,
+        name: role.name,
+        isSystem: role.isSystem,
+      },
+    });
+
+    return role;
+  }
+
+  async deleteRole(roleId: string, actorUserId: string) {
+    const role = await this.prisma.role.findUnique({
+      where: {
+        id: roleId,
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        isSystem: true,
+        _count: {
+          select: {
+            userRoles: true,
+            workflowSteps: true,
+            approvalSteps: true,
+          },
+        },
+      },
+    });
+
+    if (!role) {
+      throw new NotFoundException('Role tidak ditemukan.');
+    }
+
+    if (role.isSystem) {
+      throw new ForbiddenException('System role tidak dapat dihapus.');
+    }
+
+    if (role._count.userRoles > 0) {
+      throw new BadRequestException(
+        'Role tidak dapat dihapus karena masih digunakan oleh user.',
+      );
+    }
+
+    if (role._count.workflowSteps > 0 || role._count.approvalSteps > 0) {
+      throw new BadRequestException(
+        'Role tidak dapat dihapus karena masih digunakan dalam konfigurasi workflow atau approval.',
+      );
+    }
+
+    // Revalidate dependencies inside transaction
+    await this.prisma.$transaction(
+      async (tx) => {
+        const currentRole = await tx.role.findUnique({
+          where: {
+            id: roleId,
+          },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            isSystem: true,
+            _count: {
+              select: {
+                userRoles: true,
+                workflowSteps: true,
+                approvalSteps: true,
+              },
+            },
+          },
+        });
+
+        if (!currentRole) {
+          throw new NotFoundException('Role tidak ditemukan.');
+        }
+
+        if (currentRole.isSystem) {
+          throw new ForbiddenException('System role tidak dapat dihapus.');
+        }
+
+        if (currentRole._count.userRoles > 0) {
+          throw new BadRequestException(
+            'Role tidak dapat dihapus karena masih digunakan oleh user.',
+          );
+        }
+
+        if (
+          currentRole._count.workflowSteps > 0 ||
+          currentRole._count.approvalSteps > 0
+        ) {
+          throw new BadRequestException(
+            'Role tidak dapat dihapus karena masih digunakan dalam konfigurasi workflow atau approval.',
+          );
+        }
+
+        // Delete role permission mapping
+        await tx.rolePermission.deleteMany({
+          where: {
+            roleId: currentRole.id,
+          },
+        });
+
+        // Delete role
+        await tx.role.delete({
+          where: {
+            id: currentRole.id,
+          },
+        });
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
+
+    // Record audit log
+    await this.auditLogService.log({
+      actorUserId,
+      action: 'ROLE_DELETED',
+      entityType: 'ROLE',
+      entityId: role.id,
+      metadata: {
+        code: role.code,
+        name: role.name,
+        isSystem: role.isSystem,
+      },
+    });
+
+    return {
+      id: role.id,
+      code: role.code,
+      name: role.name,
+      deleted: true,
+    };
+  }
+
+  async updateRole(roleId: string, dto: UpdateRoleDto, actorUserId: string) {
+    const role = await this.prisma.role.findUnique({
+      where: {
+        id: roleId,
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        description: true,
+        isSystem: true,
+      },
+    });
+
+    if (!role) {
+      throw new NotFoundException('Role tidak ditemukan.');
+    }
+
+    if (role.isSystem) {
+      throw new ForbiddenException(
+        'System role tidak dapat diubah melalui Custom Role Management.',
+      );
+    }
+
+    const updatedRole = await this.prisma.role.update({
+      where: {
+        id: roleId,
+      },
+      data: {
+        ...(dto.name !== undefined && {
+          name: dto.name,
+        }),
+        ...(dto.description !== undefined && {
+          description: dto.description,
+        }),
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        description: true,
+        isSystem: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.auditLogService.log({
+      actorUserId,
+      action: 'ROLE_UPDATED',
+      entityType: 'ROLE',
+      entityId: role.id,
+      metadata: {
+        code: role.code,
+        oldName: role.name,
+        newName: updatedRole.name,
+        oldDescription: role.description,
+        newDescription: updatedRole.description,
+      },
+    });
+
+    return updatedRole;
   }
 }

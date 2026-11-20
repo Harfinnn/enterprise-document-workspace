@@ -1,4 +1,3 @@
-
 import {
   Body,
   Controller,
@@ -32,9 +31,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 
 @Controller('registration')
 export class RegistrationController {
-  constructor(
-    private readonly registrationService: RegistrationService,
-  ) {}
+  constructor(private readonly registrationService: RegistrationService) {}
 
   // ==========================================
   // PUBLIC REGISTRATION
@@ -61,10 +58,8 @@ export class RegistrationController {
   @Get('admin')
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
   @RequireRoles('IT_SUPERADMIN')
-  @RequirePermissions('user.manage')
-  async findAll(
-    @Query() query: RegistrationQueryDto,
-  ) {
+  @RequirePermissions('user.read')
+  async findAll(@Query() query: RegistrationQueryDto) {
     return this.registrationService.findAll(query);
   }
 
@@ -75,10 +70,8 @@ export class RegistrationController {
   @Get('admin/:id')
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
   @RequireRoles('IT_SUPERADMIN')
-  @RequirePermissions('user.manage')
-  async findOne(
-    @Param('id') id: string,
-  ) {
+  @RequirePermissions('user.read')
+  async findOne(@Param('id') id: string) {
     return this.registrationService.findOne(id);
   }
 
@@ -89,7 +82,7 @@ export class RegistrationController {
   @Post('admin/:id/approve')
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
   @RequireRoles('IT_SUPERADMIN')
-  @RequirePermissions('user.manage')
+  @RequirePermissions('user.create')
   @HttpCode(HttpStatus.OK)
   async approve(
     @Param('id') id: string,
@@ -116,7 +109,7 @@ export class RegistrationController {
   @Post('admin/:id/reject')
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
   @RequireRoles('IT_SUPERADMIN')
-  @RequirePermissions('user.manage')
+  @RequirePermissions('user.update')
   @HttpCode(HttpStatus.OK)
   async reject(
     @Param('id') id: string,

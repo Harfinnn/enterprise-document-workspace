@@ -1,4 +1,14 @@
-import { Controller, Get, Param, Put, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Put,
+  Post,
+  Body,
+  UseGuards,
+  Delete,
+  Patch
+} from '@nestjs/common';
 
 import { AccessControlService } from './access-control.service.js';
 
@@ -13,16 +23,28 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
 import { AssignRolePermissionsDto } from './dto/assign-role-permissions.dto.js';
+import { CreateRoleDto } from './dto/create-role.dto.js';
+import { UpdateRoleDto } from './dto/update-role.dto.js';
 
 @Controller('access-control')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class AccessControlController {
   constructor(private readonly accessControlService: AccessControlService) {}
 
-  /**
-   * GET /access-control/roles
-   * Get all roles with user and permission counts.
-   */
+  @Post('roles')
+  @RequireRoles('IT_SUPERADMIN')
+  @RequirePermissions('role.create')
+  async createRole(
+    @Body() dto: CreateRoleDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return {
+      success: true,
+      message: 'Role berhasil dibuat.',
+      data: await this.accessControlService.createRole(dto, user.id),
+    };
+  }
+
   @Get('roles')
   @RequireRoles('IT_SUPERADMIN')
   @RequirePermissions('role.read')
@@ -68,6 +90,35 @@ export class AccessControlController {
         dto.permissionIds,
         user.id,
       ),
+    };
+  }
+
+  @Delete('roles/:roleId')
+  @RequireRoles('IT_SUPERADMIN')
+  @RequirePermissions('role.delete')
+  async deleteRole(
+    @Param('roleId') roleId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return {
+      success: true,
+      message: 'Role berhasil dihapus.',
+      data: await this.accessControlService.deleteRole(roleId, user.id),
+    };
+  }
+
+  @Patch('roles/:roleId')
+  @RequireRoles('IT_SUPERADMIN')
+  @RequirePermissions('role.update')
+  async updateRole(
+    @Param('roleId') roleId: string,
+    @Body() dto: UpdateRoleDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return {
+      success: true,
+      message: 'Role berhasil diperbarui.',
+      data: await this.accessControlService.updateRole(roleId, dto, user.id),
     };
   }
 }

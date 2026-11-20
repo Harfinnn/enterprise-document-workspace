@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 
 import { JwtService } from '@nestjs/jwt';
@@ -14,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { AuditLogService } from '../audit/audit-log.service.js';
 import { WhatsAppService } from '../whatsapp/whatsapp.service.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -180,6 +182,7 @@ export class AuthService {
           id: candidate.id,
         },
         include: {
+          department: true,
           userRoles: {
             include: {
               role: {
@@ -380,12 +383,154 @@ export class AuthService {
         fullName: result.user.fullName,
         email: result.user.email,
         departmentId: result.user.departmentId,
+        department: result.user.department?.name ?? null,
         roles: result.user.userRoles.map((item) => ({
           code: item.role.code,
           name: item.role.name,
         })),
       },
       ...tokens,
+    };
+  }
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+        employeeNo: true,
+        fullName: true,
+        email: true,
+        departmentId: true,
+        phoneNumber: true,
+        phoneNumberVerifiedAt: true,
+        pendingPhoneNumber: true,
+        isActive: true,
+        department: {
+          select: {
+            name: true,
+          },
+        },
+        userRoles: {
+          select: {
+            role: {
+              select: {
+                code: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User tidak ditemukan.');
+    }
+
+    return {
+      id: user.id,
+      employeeNo: user.employeeNo,
+      fullName: user.fullName,
+      email: user.email,
+      departmentId: user.departmentId,
+      department: user.department?.name ?? null,
+
+      // WhatsApp profile state
+      phoneNumber: user.phoneNumber,
+      phoneNumberVerifiedAt: user.phoneNumberVerifiedAt,
+      pendingPhoneNumber: user.pendingPhoneNumber,
+
+      isActive: user.isActive,
+
+      roles: user.userRoles.map((item) => ({
+        code: item.role.code,
+        name: item.role.name,
+      })),
+    };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const normalizedEmail = dto.email.toLowerCase().trim();
+    const normalizedName = dto.fullName.trim();
+
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+      },
+    });
+
+    if (!currentUser) {
+      throw new NotFoundException('Pengguna tidak ditemukan.');
+    }
+
+    // Cek apakah email digunakan user lain
+    const existingEmail = await this.prisma.user.findFirst({
+      where: {
+        email: normalizedEmail,
+        id: {
+          not: userId,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingEmail) {
+      throw new BadRequestException(
+        'Email sudah digunakan oleh pengguna lain.',
+      );
+    }
+
+    // Update data user
+    const updatedUser = await this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        fullName: normalizedName,
+        email: normalizedEmail,
+      },
+      select: {
+        id: true,
+        employeeNo: true,
+        fullName: true,
+        email: true,
+        departmentId: true,
+        department: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    // Audit log
+    await this.auditLogService.log({
+      actorUserId: userId,
+      action: 'PROFILE_UPDATED',
+      entityType: 'USER',
+      entityId: userId,
+      metadata: {
+        changedFields: [
+          ...(currentUser.fullName !== normalizedName ? ['fullName'] : []),
+          ...(currentUser.email !== normalizedEmail ? ['email'] : []),
+        ],
+      },
+    });
+
+    return {
+      message: 'Profil berhasil diperbarui.',
+      user: {
+        ...updatedUser,
+        department: updatedUser.department?.name ?? null,
+      },
     };
   }
 
@@ -637,6 +782,8 @@ export class AuthService {
       select: {
         id: true,
         phoneNumber: true,
+        phoneNumberVerifiedAt: true,
+        pendingPhoneNumber: true,
       },
     });
 
@@ -644,40 +791,75 @@ export class AuthService {
       throw new NotFoundException('Pengguna tidak ditemukan.');
     }
 
-    // Jika nomor tidak berubah, pertahankan status verifikasi.
+    // Jika nomor sama dengan nomor aktif, tidak perlu perubahan.
     if (user.phoneNumber === normalizedPhone) {
       return {
-        message: 'Nomor WhatsApp tidak mengalami perubahan.',
+        message: 'Nomor WhatsApp merupakan nomor aktif saat ini.',
         phoneNumber: user.phoneNumber,
+        isVerified: Boolean(user.phoneNumberVerifiedAt),
       };
     }
 
+    // Jika nomor sama dengan pending number, tidak perlu membuat pengajuan ulang.
+    if (user.pendingPhoneNumber === normalizedPhone) {
+      return {
+        message: 'Nomor tersebut sedang menunggu verifikasi OTP.',
+        pendingPhoneNumber: user.pendingPhoneNumber,
+        isVerified: false,
+      };
+    }
+
+    // Cek apakah nomor sudah digunakan oleh user lain,
+    // baik sebagai nomor aktif maupun nomor pending.
+    const existingPhone = await this.prisma.user.findFirst({
+      where: {
+        id: { not: userId },
+        OR: [
+          { phoneNumber: normalizedPhone },
+          { pendingPhoneNumber: normalizedPhone },
+        ],
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingPhone) {
+      throw new BadRequestException(
+        'Nomor WhatsApp sudah digunakan atau sedang diajukan oleh pengguna lain.',
+      );
+    }
+
+    // Simpan sebagai pending, jangan langsung mengganti nomor aktif.
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        phoneNumber: normalizedPhone,
-        phoneNumberVerifiedAt: null,
+        pendingPhoneNumber: normalizedPhone,
       },
       select: {
         id: true,
         phoneNumber: true,
         phoneNumberVerifiedAt: true,
+        pendingPhoneNumber: true,
       },
     });
 
+    // Audit log
     await this.auditLogService.log({
       actorUserId: userId,
-      action: 'PROFILE_PHONE_UPDATED',
+      action: 'PROFILE_PHONE_UPDATE_REQUESTED',
       entityType: 'USER',
       entityId: userId,
       metadata: {
-        phoneNumberChanged: true,
+        phoneNumberChangeRequested: true,
         previousPhoneNumberExists: Boolean(user.phoneNumber),
+        previousPhoneNumberVerified: Boolean(user.phoneNumberVerifiedAt),
       },
     });
 
     return {
-      message: 'Nomor WhatsApp berhasil diperbarui.',
+      message:
+        'Nomor WhatsApp baru berhasil diajukan. Silakan lakukan verifikasi OTP.',
       user: updatedUser,
     };
   }

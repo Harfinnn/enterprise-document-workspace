@@ -1,27 +1,28 @@
-
-import { Module } from "@nestjs/common";
-import { JwtModule } from "@nestjs/jwt";
-import { ConfigService } from "@nestjs/config";
-import { AuthService } from "./auth.service.js";
-import { AuthController } from "./auth.controller.js";
+import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { AuthService } from './auth.service.js';
+import { AuthController } from './auth.controller.js';
 
 import { AccountActivationService } from './services/account-activation.service.js';
 
-import { EmailModule } from "../email/email.module.js";
+import { EmailModule } from '../email/email.module.js';
 
 import { WhatsAppModule } from '../whatsapp/whatsapp.module.js';
 
-import { PassportModule } from "@nestjs/passport";
-import { JwtStrategy } from "./strategies/jwt.strategy.js";
+import { PassportModule } from '@nestjs/passport';
+import { JwtStrategy } from './strategies/jwt.strategy.js';
 
-import { RolesGuard } from "./guards/roles.guard.js";
-import { PermissionsGuard } from "./guards/permissions.guard.js";
+import { RolesGuard } from './guards/roles.guard.js';
+import { PermissionsGuard } from './guards/permissions.guard.js';
 
-import { PasswordResetService } from "./services/password-reset.service.js";
+import { PasswordResetService } from './services/password-reset.service.js';
 
-import { EmailVerificationService } from "./services/email-verification.service.js";
+import { EmailVerificationService } from './services/email-verification.service.js';
 
-import { AuthorizationModule } from "../authorization/authorization.module.js";
+import { PhoneVerificationService } from './phone-verification.service.js';
+
+import { AuthorizationModule } from '../authorization/authorization.module.js';
 
 @Module({
   imports: [
@@ -30,22 +31,31 @@ import { AuthorizationModule } from "../authorization/authorization.module.js";
     AuthorizationModule,
 
     PassportModule.register({
-        defaultStrategy: "jwt",
+      defaultStrategy: 'jwt',
     }),
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>("JWT_ACCESS_SECRET"),
+        secret: config.getOrThrow<string>('JWT_ACCESS_SECRET'),
         signOptions: {
-          expiresIn: "15m",
-          issuer: "edw-api",
-          audience: "edw-client",
+          expiresIn: '15m',
+          issuer: 'edw-api',
+          audience: 'edw-client',
         },
       }),
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, PasswordResetService, EmailVerificationService, AccountActivationService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RolesGuard,
+    PermissionsGuard,
+    PasswordResetService,
+    EmailVerificationService,
+    AccountActivationService,
+    PhoneVerificationService,
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}

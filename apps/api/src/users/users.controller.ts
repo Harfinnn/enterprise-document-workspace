@@ -1,4 +1,3 @@
-
 import {
   Body,
   Controller,
@@ -30,20 +29,16 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @RequireRoles('IT_SUPERADMIN')
-@RequirePermissions('user.manage')
 export class UsersController {
-  constructor(
-    private readonly usersService: UsersService,
-  ) {}
+  constructor(private readonly usersService: UsersService) {}
 
   // ==========================================
   // USER LIST
   // ==========================================
 
   @Get()
-  async findAll(
-    @Query() query: UsersQueryDto,
-  ) {
+  @RequirePermissions('user.read')
+  async findAll(@Query() query: UsersQueryDto) {
     return this.usersService.findAll(query);
   }
 
@@ -52,6 +47,7 @@ export class UsersController {
   // ==========================================
 
   @Get('roles')
+  @RequirePermissions('user.read')
   async findRoles() {
     return this.usersService.findRoles();
   }
@@ -61,6 +57,7 @@ export class UsersController {
   // ==========================================
 
   @Get('departments')
+  @RequirePermissions('user.read')
   async findDepartments() {
     return this.usersService.findDepartments();
   }
@@ -70,9 +67,8 @@ export class UsersController {
   // ==========================================
 
   @Get(':id')
-  async findOne(
-    @Param('id') id: string,
-  ) {
+  @RequirePermissions('user.read')
+  async findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
   }
 
@@ -81,6 +77,7 @@ export class UsersController {
   // ==========================================
 
   @Patch(':id')
+  @RequirePermissions('user.update')
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateUserDto,
@@ -88,15 +85,11 @@ export class UsersController {
     @Ip() ipAddress: string,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return this.usersService.update(
-      id,
-      dto,
-      {
-        actorUserId: user.id,
-        ipAddress,
-        userAgent,
-      },
-    );
+    return this.usersService.update(id, dto, {
+      actorUserId: user.id,
+      ipAddress,
+      userAgent,
+    });
   }
 
   // ==========================================
@@ -104,6 +97,7 @@ export class UsersController {
   // ==========================================
 
   @Patch(':id/roles')
+  @RequirePermissions('user.role.assign')
   async updateRoles(
     @Param('id') id: string,
     @Body() dto: UpdateUserRolesDto,
@@ -111,15 +105,11 @@ export class UsersController {
     @Ip() ipAddress: string,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return this.usersService.updateRoles(
-      id,
-      dto,
-      {
-        actorUserId: user.id,
-        ipAddress,
-        userAgent,
-      },
-    );
+    return this.usersService.updateRoles(id, dto, {
+      actorUserId: user.id,
+      ipAddress,
+      userAgent,
+    });
   }
 
   // ==========================================
@@ -127,6 +117,7 @@ export class UsersController {
   // ==========================================
 
   @Patch(':id/status')
+  @RequirePermissions('user.status.manage')
   async updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateUserStatusDto,
@@ -134,15 +125,11 @@ export class UsersController {
     @Ip() ipAddress: string,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return this.usersService.updateStatus(
-      id,
-      dto,
-      {
-        actorUserId: user.id,
-        ipAddress,
-        userAgent,
-      },
-    );
+    return this.usersService.updateStatus(id, dto, {
+      actorUserId: user.id,
+      ipAddress,
+      userAgent,
+    });
   }
 
   // ==========================================
@@ -150,19 +137,17 @@ export class UsersController {
   // ==========================================
 
   @Post(':id/resend-activation')
+  @RequirePermissions('user.activation.manage')
   async resendActivation(
     @Param('id') id: string,
     @CurrentUser() user: { id: string },
     @Ip() ipAddress: string,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return this.usersService.resendActivation(
-      id,
-      {
-        actorUserId: user.id,
-        ipAddress,
-        userAgent,
-      },
-    );
+    return this.usersService.resendActivation(id, {
+      actorUserId: user.id,
+      ipAddress,
+      userAgent,
+    });
   }
 }

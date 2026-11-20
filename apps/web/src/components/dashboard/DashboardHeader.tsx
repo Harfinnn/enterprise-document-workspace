@@ -1,11 +1,8 @@
+import { LogOut, Menu, ChevronDown, UserRound } from "lucide-react";
 
-import {
-  LogOut,
-  Menu,
-  ChevronDown,
-} from "lucide-react";
+import type { DashboardUser, WorkspaceRole } from "./dashboard.types";
 
-import type { DashboardUser } from "./dashboard.types";
+import { getWorkspaceConfig } from "./dashboard.workspace";
 
 interface DashboardHeaderProps {
   user: DashboardUser;
@@ -14,6 +11,31 @@ interface DashboardHeaderProps {
   onOpenSidebar: () => void;
   onToggleProfile: () => void;
   onLogout: () => void;
+  onOpenProfile: () => void;
+}
+
+const rolePriority: WorkspaceRole[] = [
+  "IT_SUPERADMIN",
+  "DOCUMENT_CONTROL",
+  "MANAGEMENT",
+  "DEPARTMENT_HEAD",
+  "USER",
+];
+
+const roleLabels: Record<WorkspaceRole, string> = {
+  IT_SUPERADMIN: "IT Super Administrator",
+  DOCUMENT_CONTROL: "Document Control",
+  MANAGEMENT: "Management",
+  DEPARTMENT_HEAD: "Department Head",
+  USER: "Employee",
+};
+
+function getPrimaryRole(user: DashboardUser): WorkspaceRole {
+  return (
+    rolePriority.find((role) =>
+      user.roles.some((userRole) => userRole.code === role),
+    ) ?? "USER"
+  );
 }
 
 export default function DashboardHeader({
@@ -23,7 +45,11 @@ export default function DashboardHeader({
   onOpenSidebar,
   onToggleProfile,
   onLogout,
+  onOpenProfile,
 }: DashboardHeaderProps) {
+  const role = getPrimaryRole(user);
+  const workspaceConfig = getWorkspaceConfig(role);
+
   const initials = user.fullName
     .split(" ")
     .slice(0, 2)
@@ -34,7 +60,7 @@ export default function DashboardHeader({
   return (
     <header className="relative z-20 flex h-20 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
       {/* Page Information */}
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
           onClick={onOpenSidebar}
@@ -44,12 +70,12 @@ export default function DashboardHeader({
           <Menu size={22} />
         </button>
 
-        <div>
-          <p className="text-xs text-slate-400">
-            EDW / Administrator
+        <div className="min-w-0">
+          <p className="truncate text-xs text-slate-400">
+            EDW / {workspaceConfig.workspace.title}
           </p>
 
-          <h2 className="text-lg font-bold text-edw-navy">
+          <h2 className="truncate text-lg font-bold text-edw-navy">
             {pageTitle}
           </h2>
         </div>
@@ -68,19 +94,14 @@ export default function DashboardHeader({
               {user.fullName}
             </p>
 
-            <p className="text-xs text-slate-400">
-              IT SuperAdmin
-            </p>
+            <p className="text-xs text-slate-400">{roleLabels[role]}</p>
           </div>
 
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-edw-teal text-sm font-bold text-white">
             {initials}
           </div>
 
-          <ChevronDown
-            size={16}
-            className="text-slate-400"
-          />
+          <ChevronDown size={16} className="text-slate-400" />
         </button>
 
         {profileOpen && (
@@ -93,7 +114,20 @@ export default function DashboardHeader({
               <p className="mt-1 break-all text-xs text-slate-400">
                 {user.email}
               </p>
+
+              <p className="mt-2 text-xs font-medium text-edw-teal">
+                {workspaceConfig.workspace.title}
+              </p>
             </div>
+
+            <button
+              type="button"
+              onClick={onOpenProfile}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm text-slate-700 transition hover:bg-slate-50"
+            >
+              <UserRound size={17} className="text-slate-500" />
+              My Profile
+            </button>
 
             <button
               type="button"

@@ -98,6 +98,7 @@ model User {
   emailVerifiedAt DateTime?
   phoneNumber         String?
   phoneNumberVerifiedAt DateTime?
+  pendingPhoneNumber String? @unique
   passwordHash    String
   isActive        Boolean   @default(true)
   
@@ -124,6 +125,7 @@ model User {
   registrationReviews RegistrationRequest[] @relation("RegistrationReviewedBy")
   registrationCreated RegistrationRequest?  @relation("RegistrationCreatedUser")
   activationChallenges AccountActivationChallenge[]
+  phoneVerificationChallenges PhoneVerificationChallenge[]
 }
 
 // ==========================================
@@ -450,6 +452,30 @@ model PasswordResetChallenge {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, channel, createdAt])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+
+model PhoneVerificationChallenge {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  phoneNumber String
+
+  otpHash     String
+  expiresAt   DateTime
+  verifiedAt  DateTime?
+  consumedAt  DateTime?
+  attempts    Int      @default(0)
+  lastSentAt DateTime?
+
+  createdAt   DateTime @default(now())
+  requestedIp String?
+  userAgent   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
   @@index([expiresAt])
   @@index([consumedAt])
 }
