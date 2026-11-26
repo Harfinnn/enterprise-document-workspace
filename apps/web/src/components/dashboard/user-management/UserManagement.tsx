@@ -17,11 +17,16 @@ import {
   getUserRoles,
   updateUserStatus,
   resendUserActivation,
+  createUser,
 } from "./user-management.service";
+
+import type { CreateUserPayload } from "./user-management.service";
 
 import UserDetail from "./UserDetail";
 
 import UserEdit from "./UserEdit";
+
+import UserCreate from "./UserCreate";
 
 import type {
   ManagedUser,
@@ -57,6 +62,15 @@ export default function UserManagement() {
 
   const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null);
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+
+  const [isCreateUserOpen, setIsCreateUserOpen] = useState(false);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [createUserError, setCreateUserError] = useState("");
+  const [createdUserCredentials, setCreatedUserCredentials] = useState<{
+    fullName: string;
+    email: string;
+    temporaryPassword: string;
+  } | null>(null);
 
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -142,6 +156,42 @@ export default function UserManagement() {
   const handleResendActivation = async (user: ManagedUser) => {
     await resendUserActivation(user.id);
     await refreshUserAfterAction(user);
+  };
+
+  const handleCreateUser = async (payload: CreateUserPayload) => {
+    setIsCreatingUser(true);
+    setCreateUserError("");
+
+    try {
+      const response = await createUser(payload);
+      const created = response.data;
+
+      setCreatedUserCredentials({
+        fullName: created.user.fullName,
+        email: created.user.email,
+        temporaryPassword: created.temporaryPassword,
+      });
+
+      setIsCreateUserOpen(false);
+      await fetchUsers(1);
+    } catch (error: unknown) {
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof error.response === "object" &&
+        error.response !== null &&
+        "data" in error.response &&
+        typeof error.response.data === "object" &&
+        error.response.data !== null &&
+        "message" in error.response.data
+          ? String(error.response.data.message)
+          : "Gagal membuat pengguna. Periksa data dan coba kembali.";
+
+      setCreateUserError(message);
+    } finally {
+      setIsCreatingUser(false);
+    }
   };
 
   useEffect(() => {
@@ -233,9 +283,12 @@ export default function UserManagement() {
 
         <button
           type="button"
-          disabled
-          title="Fitur tambah pengguna akan diimplementasikan berikutnya"
-          className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-edw-teal px-4 py-3 text-sm font-semibold text-white opacity-60"
+          onClick={() => {
+            setCreateUserError("");
+            setCreatedUserCredentials(null);
+            setIsCreateUserOpen(true);
+          }}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-edw-teal px-4 py-3 text-sm font-semibold text-white transition hover:bg-edw-teal/90"
         >
           <UserPlus size={18} />
           Add User
@@ -587,6 +640,100 @@ export default function UserManagement() {
                 void fetchUsers(meta.page);
               }}
             />
+          )}
+
+          {isCreateUserOpen && (
+            <UserCreate
+              departments={departments}
+              roles={roles}
+              loading={isCreatingUser}
+              error={createUserError}
+              onClose={() => {
+                setIsCreateUserOpen(false);
+                setCreateUserError("");
+              }}
+              onSubmit={handleCreateUser}
+            />
+          )}
+
+          {createdUserCredentials && (
+            <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4">
+              <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="border-b border-slate-200 px-6 py-5">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                    ✓
+                  </div>
+
+                  <h2 className="mt-3 text-lg font-bold text-edw-navy">
+                    User Berhasil Dibuat
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Akun berhasil dibuat. Simpan temporary password berikut dan
+                    berikan kepada pengguna.
+                  </p>
+                </div>
+
+                <div className="space-y-4 p-6">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                      Full Name
+                    </label>
+                    <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800">
+                      {createdUserCredentials.fullName}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                      Email
+                    </label>
+                    <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-800">
+                      {createdUserCredentials.email}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                      Temporary Password
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 font-mono text-sm font-semibold text-amber-800 break-all">
+                        {createdUserCredentials.temporaryPassword}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigator.clipboard.writeText(
+                            createdUserCredentials.temporaryPassword,
+                          )
+                        }
+                        className="shrink-0 rounded-lg bg-edw-teal px-4 py-3 text-sm font-semibold text-white transition hover:bg-edw-teal/90"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                    Pengguna wajib mengganti password saat login pertama kali.
+                    Jangan tutup dialog ini sebelum temporary password disimpan.
+                  </div>
+                </div>
+
+                <div className="flex justify-end border-t border-slate-100 px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setCreatedUserCredentials(null)}
+                    className="rounded-xl bg-edw-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-edw-navy/90"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 

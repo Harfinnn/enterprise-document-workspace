@@ -384,6 +384,7 @@ export class AuthService {
         email: result.user.email,
         departmentId: result.user.departmentId,
         department: result.user.department?.name ?? null,
+        mustChangePassword: result.user.mustChangePassword,
         roles: result.user.userRoles.map((item) => ({
           code: item.role.code,
           name: item.role.name,
@@ -419,6 +420,15 @@ export class AuthService {
               select: {
                 code: true,
                 name: true,
+                rolePermissions: {
+                  select: {
+                    permission: {
+                      select: {
+                        code: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -449,6 +459,14 @@ export class AuthService {
         code: item.role.code,
         name: item.role.name,
       })),
+      
+      permissions: [
+        ...new Set(
+          user.userRoles.flatMap((item) =>
+            item.role.rolePermissions.map((rp) => rp.permission.code),
+          ),
+        ),
+      ],
     };
   }
 
@@ -531,6 +549,100 @@ export class AuthService {
         ...updatedUser,
         department: updatedUser.department?.name ?? null,
       },
+    };
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    if (
+      typeof currentPassword !== 'string' ||
+      typeof newPassword !== 'string' ||
+      newPassword.length < 12 ||
+      newPassword.length > 128 ||
+      !/[A-Z]/.test(newPassword) ||
+      !/[a-z]/.test(newPassword) ||
+      !/[0-9]/.test(newPassword) ||
+      !/[^A-Za-z0-9]/.test(newPassword)
+    ) {
+      throw new BadRequestException(
+        'Password harus minimal 12 karakter dan mengandung huruf kapital, huruf kecil, angka, serta karakter spesial.',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        passwordHash: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Pengguna tidak ditemukan.');
+    }
+
+    // Verifikasi password saat ini
+    const isCurrentPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Password saat ini tidak valid.');
+    }
+
+    // Cegah penggunaan password yang sama
+    const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
+
+    if (isSamePassword) {
+      throw new BadRequestException(
+        'Password baru harus berbeda dari password saat ini.',
+      );
+    }
+
+    // Hash password baru
+    const newPasswordHash = await bcrypt.hash(newPassword, 12);
+
+    // Update password dan revoke seluruh refresh token aktif
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash: newPasswordHash,
+          mustChangePassword: false,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      }),
+
+      this.prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      }),
+    ]);
+
+    // Catat aktivitas
+    await this.auditLogService.log({
+      actorUserId: userId,
+      action: 'PASSWORD_CHANGED',
+      entityType: 'USER',
+      entityId: userId,
+      metadata: {
+        method: 'AUTHENTICATED_CHANGE_PASSWORD',
+        sessionsRevoked: true,
+      },
+    });
+
+    return {
+      message: 'Password berhasil diubah. Silakan login kembali.',
     };
   }
 

@@ -26,6 +26,8 @@ import { RequireRoles } from '../auth/decorators/roles.decorator.js';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 
+import { CreateUserDto } from './dto/create-user.dto.js';
+
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @RequireRoles('IT_SUPERADMIN')
@@ -40,6 +42,25 @@ export class UsersController {
   @RequirePermissions('user.read')
   async findAll(@Query() query: UsersQueryDto) {
     return this.usersService.findAll(query);
+  }
+
+  // ==========================================
+  // CREATE USER
+  // ==========================================
+
+  @Post()
+  @RequirePermissions('user.create')
+  async createUser(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() user: { id: string },
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return this.usersService.createUser(dto, {
+      actorUserId: user.id,
+      ipAddress,
+      userAgent,
+    });
   }
 
   // ==========================================

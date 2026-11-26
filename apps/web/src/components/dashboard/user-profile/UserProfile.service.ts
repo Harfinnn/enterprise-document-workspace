@@ -1,4 +1,3 @@
-
 import axios from "axios";
 
 const API_URL =
@@ -17,13 +16,9 @@ export const UserProfileService = {
       email: string;
     },
   ) {
-    return axios.patch(
-      `${API_URL}/auth/profile`,
-      data,
-      {
-        headers: getAuthHeaders(token),
-      },
-    );
+    return axios.patch(`${API_URL}/auth/profile`, data, {
+      headers: getAuthHeaders(token),
+    });
   },
 
   // Update WhatsApp number
@@ -62,6 +57,19 @@ export const UserProfileService = {
   // Fetch current user profile
   getCurrentProfile(token: string) {
     return axios.get(`${API_URL}/auth/me`, {
+      headers: getAuthHeaders(token),
+    });
+  },
+
+  // Change Password
+  changePassword(
+    token: string,
+    data: {
+      currentPassword: string;
+      newPassword: string;
+    },
+  ) {
+    return axios.patch(`${API_URL}/auth/change-password`, data, {
       headers: getAuthHeaders(token),
     });
   },

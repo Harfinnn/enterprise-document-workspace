@@ -19,6 +19,7 @@ import { UsersQueryDto } from './dto/users-query.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto.js';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto.js';
+import { CreateUserDto } from './dto/create-user.dto.js';
 
 interface UserManagementMetadata {
   actorUserId: string;
@@ -548,6 +549,139 @@ export class UsersService {
       data: {
         userId: id,
         isActive: dto.isActive,
+      },
+    };
+  }
+
+  // ==========================================
+  // CREATE USER
+  // ==========================================
+
+  async createUser(dto: CreateUserDto, metadata: UserManagementMetadata) {
+    const fullName = dto.fullName.trim();
+    const email = dto.email.trim().toLowerCase();
+    const employeeNo = dto.employeeNo?.trim() || null;
+
+    // Validate duplicate email
+    const existingEmail = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+
+    if (existingEmail) {
+      throw new ConflictException('Email sudah digunakan.');
+    }
+
+    // Validate duplicate employee number
+    if (employeeNo) {
+      const existingEmployeeNo = await this.prisma.user.findUnique({
+        where: { employeeNo },
+        select: { id: true },
+      });
+
+      if (existingEmployeeNo) {
+        throw new ConflictException('Nomor pegawai sudah digunakan.');
+      }
+    }
+
+    // Validate active department
+    const department = await this.prisma.department.findFirst({
+      where: {
+        id: dto.departmentId,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    if (!department) {
+      throw new BadRequestException(
+        'Departemen tidak ditemukan atau sudah nonaktif.',
+      );
+    }
+
+    // Validate role
+    const role = await this.prisma.role.findFirst({
+      where: {
+        id: dto.roleId,
+        code: {
+          not: 'IT_SUPERADMIN',
+        },
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+      },
+    });
+
+    if (!role) {
+      throw new BadRequestException(
+        'Role tidak valid atau tidak dapat diberikan.',
+      );
+    }
+
+    // Generate unique temporary password
+    const temporaryPassword = randomBytes(18).toString('base64url');
+
+    // Hash password
+    const passwordHash = await hash(temporaryPassword, 12);
+
+    // Create user and assign role
+    const user = await this.prisma.user.create({
+      data: {
+        fullName,
+        email,
+        employeeNo,
+        department: {
+          connect: {
+            id: department.id,
+          },
+        },
+        passwordHash,
+        isActive: true,
+        emailVerifiedAt: new Date(),
+        mustChangePassword: true,
+        userRoles: {
+          create: {
+            roleId: role.id,
+          },
+        },
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        employeeNo: true,
+        departmentId: true,
+        isActive: true,
+        emailVerifiedAt: true,
+        mustChangePassword: true,
+        createdAt: true,
+      },
+    });
+
+    // Audit log
+    await this.auditLog.log({
+      actorUserId: metadata.actorUserId,
+      action: 'USER_CREATED_BY_ADMIN',
+      entityType: 'USER',
+      entityId: user.id,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      metadata: {
+        email,
+        employeeNo,
+        departmentId: department.id,
+        roleCode: role.code,
+      },
+    });
+
+    return {
+      message: 'Pengguna berhasil dibuat.',
+      data: {
+        user,
+        role,
+        temporaryPassword,
       },
     };
   }

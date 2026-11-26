@@ -10,6 +10,7 @@ import RegistrationManagement from "./dashboard/registration-management/Registra
 import type { DashboardUser, WorkspaceRole } from "./dashboard/dashboard.types";
 import DocumentWorkspace from "./dashboard/document-workspace/DocumentWorkspace";
 import UserProfile from "./dashboard/user-profile/UserProfile";
+import RolesManagement from "./dashboard/role-management/RolesManagement";
 
 interface DashboardLayoutProps {
   user: DashboardUser;
@@ -40,7 +41,22 @@ export default function DashboardLayout({
   const workspaceConfig = getWorkspaceConfig(role);
   const navigation = getNavigationByRole(role);
 
-  const [activeMenu, setActiveMenu] = useState(workspaceConfig.defaultMenu);
+  const menuStorageKey = `edw-active-menu-${role}`;
+
+  const [activeMenu, setActiveMenu] = useState(() => {
+    const savedMenu = localStorage.getItem(menuStorageKey);
+
+    const validMenuKeys = navigation.map((item) => item.key);
+
+    if (
+      savedMenu &&
+      (validMenuKeys.includes(savedMenu) || savedMenu === "profile")
+    ) {
+      return savedMenu;
+    }
+
+    return workspaceConfig.defaultMenu;
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem("edw-sidebar-collapsed") === "true";
@@ -58,6 +74,10 @@ export default function DashboardLayout({
   useEffect(() => {
     localStorage.setItem("edw-sidebar-collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem(menuStorageKey, activeMenu);
+  }, [activeMenu, menuStorageKey]);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-slate-50 text-edw-navy">
@@ -93,15 +113,12 @@ export default function DashboardLayout({
             <RegistrationManagement />
           ) : activeMenu === "users" ? (
             <UserManagement />
-          ) : [
-              "documents",
-              "document-repository",
-              "department-documents",
-              "my-documents",
-            ].includes(activeMenu) ? (
-            <DocumentWorkspace />
+          ) : activeMenu === "roles" ? (
+            <RolesManagement />
+          ) : activeMenu === "documents" ? (
+            <DocumentWorkspace user={user} activeMenu={activeMenu} />
           ) : activeMenu === "profile" ? (
-             <UserProfile user={user} />
+            <UserProfile user={user} />
           ) : (
             <div className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white p-8">
               <p className="text-sm font-semibold text-edw-teal">

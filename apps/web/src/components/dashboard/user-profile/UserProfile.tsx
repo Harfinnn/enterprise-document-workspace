@@ -21,6 +21,8 @@ import {
   Clock,
   LoaderCircle,
   ArrowRight,
+  Eye,
+  EyeOff,
   type LucideIcon,
 } from "lucide-react";
 
@@ -310,6 +312,26 @@ export default function UserProfile({ user }: UserProfileProps) {
 
     pendingPhoneNumber: null,
   });
+
+  const [showChangePassword, setShowChangePassword] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState("");
+
+  const [newPassword, setNewPassword] = useState("");
+
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+
+  const [passwordError, setPasswordError] = useState("");
+
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const primaryRole = user.roles[0]?.name ?? "Employee";
 
@@ -716,6 +738,72 @@ export default function UserProfile({ user }: UserProfileProps) {
 
     return () => window.clearInterval(timer);
   }, [otpModalOpen]);
+
+  const handleChangePassword = async () => {
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (newPassword.length < 12) {
+      setPasswordError("Password minimal 12 karakter.");
+      return;
+    }
+
+    if (!/[A-Z]/.test(newPassword)) {
+      setPasswordError("Password harus mengandung minimal 1 huruf kapital.");
+      return;
+    }
+
+    if (!/[a-z]/.test(newPassword)) {
+      setPasswordError("Password harus mengandung minimal 1 huruf kecil.");
+      return;
+    }
+
+    if (!/[0-9]/.test(newPassword)) {
+      setPasswordError("Password harus mengandung minimal 1 angka.");
+      return;
+    }
+
+    if (!/[^A-Za-z0-9]/.test(newPassword)) {
+      setPasswordError("Password harus mengandung minimal 1 karakter spesial.");
+      return;
+    }
+
+    const token = sessionStorage.getItem("edw_access_token");
+
+    if (!token) {
+      setPasswordError("Session login tidak ditemukan. Silakan login kembali.");
+      return;
+    }
+
+    try {
+      setPasswordLoading(true);
+
+      await UserProfileService.changePassword(token, {
+        currentPassword,
+        newPassword,
+      });
+
+      setPasswordSuccess("Password berhasil diubah.");
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const apiMessage = err.response?.data?.message;
+
+        setPasswordError(
+          Array.isArray(apiMessage)
+            ? apiMessage.join("\n")
+            : apiMessage || "Gagal mengubah password.",
+        );
+      } else {
+        setPasswordError("Terjadi kesalahan saat mengubah password.");
+      }
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -1232,14 +1320,188 @@ export default function UserProfile({ user }: UserProfileProps) {
 
             <button
               type="button"
-              disabled
-              className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-400"
+              onClick={() => {
+                setShowChangePassword(true);
+                setPasswordError("");
+                setPasswordSuccess("");
+              }}
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-edw-teal hover:bg-slate-50"
             >
               Change Password
             </button>
           </div>
         </SectionCard>
       </div>
+      {showChangePassword && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            {/* Header */}
+            <div className="mb-6 flex items-start justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">
+                  Change Password
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Update your account password.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowChangePassword(false)}
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Error */}
+            {passwordError && (
+              <Notice tone="error" icon={AlertCircle} role="alert">
+                {passwordError}
+              </Notice>
+            )}
+
+            {/* Success */}
+            {passwordSuccess && (
+              <Notice tone="success" icon={CheckCircle2} role="status">
+                {passwordSuccess}
+              </Notice>
+            )}
+
+            <div className="mt-5 space-y-4">
+              {/* Current Password */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Current Password
+                </label>
+
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? "text" : "password"}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    autoComplete="current-password"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 pr-12 text-sm outline-none transition focus:border-edw-teal focus:ring-2 focus:ring-edw-teal/20"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                  >
+                    {showCurrentPassword ? (
+                      <EyeOff size={18} />
+                    ) : (
+                      <Eye size={18} />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  New Password
+                </label>
+
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password"
+                    autoComplete="new-password"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 pr-12 text-sm outline-none transition focus:border-edw-teal focus:ring-2 focus:ring-edw-teal/20"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                  >
+                    {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+
+                <p className="mt-1.5 text-xs text-slate-400">
+                  Minimum 12 characters, including uppercase, lowercase, number,
+                  and special character.
+                </p>
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Confirm New Password
+                </label>
+
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    autoComplete="new-password"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 pr-12 text-sm outline-none transition focus:border-edw-teal focus:ring-2 focus:ring-edw-teal/20"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff size={18} />
+                    ) : (
+                      <Eye size={18} />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowChangePassword(false);
+                  setPasswordError("");
+                  setPasswordSuccess("");
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                }}
+                disabled={passwordLoading}
+                className={btnSecondary + " flex-1"}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleChangePassword}
+                disabled={passwordLoading}
+                className={btnPrimary + " flex-1"}
+              >
+                {passwordLoading ? (
+                  <>
+                    <LoaderCircle size={16} className="animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <KeyRound size={16} />
+                    Update Password
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ export interface DashboardUser {
   // Profile information
   phone?: string | null;
   department?: string | null;
+  departmentId?: string | null;
   position?: string | null;
 
   // Account information
@@ -32,6 +33,8 @@ export interface DashboardUser {
     code: string;
     name: string;
   }[];
+
+  permissions: string[];
 }
 
 export interface NavigationItem {

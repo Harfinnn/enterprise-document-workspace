@@ -139,13 +139,6 @@ export class AccessControlService {
       throw new NotFoundException('Role tidak ditemukan.');
     }
 
-    // 2. Protect system roles
-    if (role.isSystem) {
-      throw new ForbiddenException(
-        'Permission pada system role tidak dapat diubah melalui API ini.',
-      );
-    }
-
     // 3. Validate permission IDs
     const uniquePermissionIds = [...new Set(permissionIds)];
 
@@ -176,18 +169,13 @@ export class AccessControlService {
         },
         select: {
           id: true,
+          code: true,
           isSystem: true,
         },
       });
 
       if (!currentRole) {
         throw new NotFoundException('Role tidak ditemukan.');
-      }
-
-      if (currentRole.isSystem) {
-        throw new ForbiddenException(
-          'Permission pada system role tidak dapat diubah melalui API ini.',
-        );
       }
 
       // Replace role permissions atomically

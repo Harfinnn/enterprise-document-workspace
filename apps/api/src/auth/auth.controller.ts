@@ -56,6 +56,8 @@ import { WhatsAppService } from '../whatsapp/whatsapp.service.js';
 
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 
+import { ChangePasswordDto } from './dto/change-password.dto.js';
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -418,5 +420,29 @@ export class AuthController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.authService.updateProfile(user.id, dto);
+  }
+
+  // ==========================================
+  // CHANGE PASSWORD
+  // ==========================================
+
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 900_000,
+    },
+  })
+  @Patch('change-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(
+      user.id,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 }

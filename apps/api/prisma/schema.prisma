@@ -27,6 +27,11 @@ enum DocumentClassification {
   HIGHLY_CONFIDENTIAL
 }
 
+enum DocumentWorkspaceType {
+  PERSONAL
+  DEPARTMENT
+}
+
 enum ApprovalRequestStatus {
   IN_PROGRESS
   APPROVED
@@ -86,22 +91,23 @@ model Department {
 
   users                 User[]
   documents             Document[]
-  specificWorkflowSteps ApprovalStep[] @relation("SpecificDepartment")
-  registrationRequests RegistrationRequest[]
+  specificWorkflowSteps ApprovalStep[]        @relation("SpecificDepartment")
+  registrationRequests  RegistrationRequest[]
 }
 
 model User {
-  id              String    @id @default(uuid()) @db.Uuid
-  employeeNo      String?   @unique
-  fullName        String
-  email           String    @unique
-  emailVerifiedAt DateTime?
-  phoneNumber         String?
+  id                    String    @id @default(uuid()) @db.Uuid
+  employeeNo            String?   @unique
+  fullName              String
+  email                 String    @unique
+  emailVerifiedAt       DateTime?
+  phoneNumber           String?
   phoneNumberVerifiedAt DateTime?
-  pendingPhoneNumber String? @unique
-  passwordHash    String
-  isActive        Boolean   @default(true)
-  
+  pendingPhoneNumber    String?   @unique
+  passwordHash          String
+  mustChangePassword    Boolean   @default(false)
+  isActive              Boolean   @default(true)
+
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
 
@@ -111,9 +117,14 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userRoles                   UserRole[]
-  ownedDocuments              Document[]                   @relation("DocumentOwner")
-  uploadedVersions            DocumentVersion[]            @relation("VersionUploader")
+  userRoles        UserRole[]
+  ownedDocuments   Document[]        @relation("DocumentOwner")
+  sharedDocuments  Document[]        @relation("DocumentSharedToAll")
+  uploadedVersions DocumentVersion[] @relation("VersionUploader")
+
+  documentSharesReceived DocumentShare[] @relation("DocumentShareRecipient")
+  documentSharesSent     DocumentShare[] @relation("DocumentShareSender")
+
   submittedRequests           ApprovalRequest[]            @relation("ApprovalSubmitter")
   assignedApprovalSteps       ApprovalStepInstance[]       @relation("AssignedApprover")
   actedApprovalSteps          ApprovalStepInstance[]       @relation("StepActor")
@@ -122,9 +133,9 @@ model User {
   refreshTokens               RefreshToken[]
   passwordResetChallenges     PasswordResetChallenge[]
   emailVerificationChallenges EmailVerificationChallenge[]
-  registrationReviews RegistrationRequest[] @relation("RegistrationReviewedBy")
-  registrationCreated RegistrationRequest?  @relation("RegistrationCreatedUser")
-  activationChallenges AccountActivationChallenge[]
+  registrationReviews         RegistrationRequest[]        @relation("RegistrationReviewedBy")
+  registrationCreated         RegistrationRequest?         @relation("RegistrationCreatedUser")
+  activationChallenges        AccountActivationChallenge[]
   phoneVerificationChallenges PhoneVerificationChallenge[]
 }
 
@@ -205,32 +216,63 @@ model Document {
   status         DocumentStatus         @default(DRAFT)
   classification DocumentClassification @default(INTERNAL)
 
-  departmentId   String @db.Uuid
-  ownerId        String @db.Uuid
-  documentTypeId String @db.Uuid
+  workspaceType DocumentWorkspaceType @default(DEPARTMENT)
 
-  currentVersionNumber Int @default(1)
+  departmentId   String? @db.Uuid
+  ownerId        String  @db.Uuid
+  documentTypeId String  @db.Uuid
 
-  department   Department   @relation(fields: [departmentId], references: [id])
+  currentMajorVersion Int @default(1)
+  currentMinorVersion Int @default(0)
+
+  sharedToAllAt   DateTime?
+  sharedToAllById String?   @db.Uuid
+
+  department   Department?  @relation(fields: [departmentId], references: [id])
   owner        User         @relation("DocumentOwner", fields: [ownerId], references: [id])
   documentType DocumentType @relation(fields: [documentTypeId], references: [id])
 
+  sharedToAllBy User? @relation("DocumentSharedToAll", fields: [sharedToAllById], references: [id], onDelete: SetNull)
+
   versions         DocumentVersion[]
   approvalRequests ApprovalRequest[]
+  shares           DocumentShare[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([departmentId])
   @@index([ownerId])
   @@index([documentTypeId])
   @@index([status])
+  @@index([workspaceType])
+  @@index([sharedToAllAt])
+}
+
+model DocumentShare {
+  id               String @id @default(uuid()) @db.Uuid
+  documentId       String @db.Uuid
+  sharedWithUserId String @db.Uuid
+  sharedByUserId   String @db.Uuid
+
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sharedWith User     @relation("DocumentShareRecipient", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  sharedBy   User     @relation("DocumentShareSender", fields: [sharedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([documentId, revokedAt])
+  @@index([sharedWithUserId, revokedAt])
+  @@index([sharedByUserId])
 }
 
 model DocumentVersion {
-  id            String @id @default(uuid()) @db.Uuid
-  documentId    String @db.Uuid
-  versionNumber Int
+  id           String @id @default(uuid()) @db.Uuid
+  documentId   String @db.Uuid
+  majorVersion Int    @default(1)
+  minorVersion Int    @default(0)
 
   originalFileName String
   storageKey       String @unique
@@ -249,7 +291,7 @@ model DocumentVersion {
 
   createdAt DateTime @default(now())
 
-  @@unique([documentId, versionNumber])
+  @@unique([documentId, majorVersion, minorVersion])
   @@index([documentId])
 }
 
@@ -431,13 +473,13 @@ model RefreshToken {
 }
 
 model PasswordResetChallenge {
-  id          String               @id @default(uuid()) @db.Uuid
-  userId      String               @db.Uuid
-  channel     PasswordResetChannel
-  tokenHash   String               @unique
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  attempts    Int                  @default(0)
+  id         String               @id @default(uuid()) @db.Uuid
+  userId     String               @db.Uuid
+  channel    PasswordResetChannel
+  tokenHash  String               @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int                  @default(0)
 
   // WhatsApp OTP
   otpHash       String?
@@ -445,7 +487,7 @@ model PasswordResetChallenge {
   otpVerifiedAt DateTime?
   otpLastSentAt DateTime?
 
-  createdAt   DateTime             @default(now())
+  createdAt   DateTime @default(now())
   requestedIp String?
   userAgent   String?
 
@@ -456,17 +498,16 @@ model PasswordResetChallenge {
   @@index([consumedAt])
 }
 
-
 model PhoneVerificationChallenge {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @db.Uuid
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @db.Uuid
   phoneNumber String
 
-  otpHash     String
-  expiresAt   DateTime
-  verifiedAt  DateTime?
-  consumedAt  DateTime?
-  attempts    Int      @default(0)
+  otpHash    String
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  consumedAt DateTime?
+  attempts   Int       @default(0)
   lastSentAt DateTime?
 
   createdAt   DateTime @default(now())
@@ -499,29 +540,29 @@ model EmailVerificationChallenge {
 }
 
 model RegistrationRequest {
-  id                    String             @id @default(uuid()) @db.Uuid
+  id                    String  @id @default(uuid()) @db.Uuid
   fullName              String
   email                 String
   employeeNo            String?
-  requestedDepartmentId String?            @db.Uuid
+  requestedDepartmentId String? @db.Uuid
 
-  status                RegistrationStatus @default(PENDING)
+  status RegistrationStatus @default(PENDING)
 
-  reviewedById          String?            @db.Uuid
-  reviewedAt            DateTime?
-  rejectionReason       String?
+  reviewedById    String?   @db.Uuid
+  reviewedAt      DateTime?
+  rejectionReason String?
 
-  createdUserId         String?            @unique @db.Uuid
+  createdUserId String? @unique @db.Uuid
 
-  requestIp             String?
-  userAgent             String?
+  requestIp String?
+  userAgent String?
 
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  requestedDepartment   Department?        @relation(fields: [requestedDepartmentId], references: [id], onDelete: SetNull)
-  reviewedBy            User?              @relation("RegistrationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
-  createdUser           User?              @relation("RegistrationCreatedUser", fields: [createdUserId], references: [id], onDelete: SetNull)
+  requestedDepartment Department? @relation(fields: [requestedDepartmentId], references: [id], onDelete: SetNull)
+  reviewedBy          User?       @relation("RegistrationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdUser         User?       @relation("RegistrationCreatedUser", fields: [createdUserId], references: [id], onDelete: SetNull)
 
   @@index([email])
   @@index([status, createdAt])
@@ -537,7 +578,7 @@ model AccountActivationChallenge {
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
 
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])

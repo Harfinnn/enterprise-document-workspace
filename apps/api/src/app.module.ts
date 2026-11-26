@@ -24,6 +24,8 @@ import { UsersModule } from './users/users.module.js';
 
 import { DashboardModule } from './dashboard/dashboard.module.js';
 
+import { DocumentsModule } from './documents/documents.module.js';
+
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
@@ -48,6 +50,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     RegistrationModule,
     UsersModule,
     DashboardModule,
+    DocumentsModule,
     AuthorizationModule,
     AccessControlModule,
   ],

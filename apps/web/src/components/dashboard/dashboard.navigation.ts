@@ -1,4 +1,3 @@
-
 import {
   LayoutDashboard,
   Users,
@@ -15,21 +14,26 @@ import {
   Clock,
   Star,
   ChartNoAxesCombined,
-  FolderOpen,
   Inbox,
   BookOpen,
+  Network,
 } from "lucide-react";
 
 import type { NavigationItem, WorkspaceRole } from "./dashboard.types";
 
 const navigation: NavigationItem[] = [
   // =========================
-  // SHARED
+  // SHARED WORKSPACES
   // =========================
   {
     label: "Overview",
     icon: LayoutDashboard,
     key: "overview",
+  },
+  {
+    label: "Document Management",
+    icon: Files,
+    key: "documents",
   },
 
   // =========================
@@ -60,12 +64,6 @@ const navigation: NavigationItem[] = [
     allowedRoles: ["IT_SUPERADMIN"],
   },
   {
-    label: "Document Management",
-    icon: Files,
-    key: "documents",
-    allowedRoles: ["IT_SUPERADMIN"],
-  },
-  {
     label: "Audit Log",
     icon: ClipboardList,
     key: "audit",
@@ -81,12 +79,6 @@ const navigation: NavigationItem[] = [
   // =========================
   // DOCUMENT CONTROL
   // =========================
-  {
-    label: "Document Repository",
-    icon: FolderOpen,
-    key: "document-repository",
-    allowedRoles: ["DOCUMENT_CONTROL"],
-  },
   {
     label: "Document Review",
     icon: FileSearch,
@@ -129,7 +121,7 @@ const navigation: NavigationItem[] = [
   },
   {
     label: "Organizational Insights",
-    icon: ChartNoAxesCombined,
+    icon: Network,
     key: "organizational-insights",
     allowedRoles: ["MANAGEMENT"],
   },
@@ -137,12 +129,6 @@ const navigation: NavigationItem[] = [
   // =========================
   // DEPARTMENT HEAD
   // =========================
-  {
-    label: "Department Documents",
-    icon: Files,
-    key: "department-documents",
-    allowedRoles: ["DEPARTMENT_HEAD"],
-  },
   {
     label: "Review Requests",
     icon: Inbox,
@@ -165,12 +151,6 @@ const navigation: NavigationItem[] = [
   // =========================
   // USER
   // =========================
-  {
-    label: "My Documents",
-    icon: Files,
-    key: "my-documents",
-    allowedRoles: ["USER"],
-  },
   {
     label: "Shared With Me",
     icon: Share2,

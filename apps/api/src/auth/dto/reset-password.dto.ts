@@ -1,9 +1,10 @@
+
 import {
   IsNotEmpty,
   IsString,
   MaxLength,
-  MinLength,
 } from "class-validator";
+import { IsPasswordComplexity } from "../validators/password-complexity.validator.js";
 
 export class ResetPasswordDto {
   @IsString()
@@ -12,11 +13,6 @@ export class ResetPasswordDto {
   token: string;
 
   @IsString()
-  @MinLength(12, {
-    message: "Password baru minimal 12 karakter.",
-  })
-  @MaxLength(128, {
-    message: "Password baru maksimal 128 karakter.",
-  })
+  @IsPasswordComplexity()
   newPassword: string;
 }

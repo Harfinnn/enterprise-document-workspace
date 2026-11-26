@@ -29,10 +29,12 @@ interface LoginResponse {
     email: string;
     departmentId?: string | null;
     department?: string | null;
+    mustChangePassword: boolean;
     roles: {
       code: string;
       name: string;
     }[];
+    permissions: string[];
   };
   accessToken: string;
   refreshToken: string;
@@ -104,12 +106,41 @@ function App() {
     if (!storedUser) return null;
 
     try {
-      return JSON.parse(storedUser) as LoginResponse["user"];
+      const user = JSON.parse(storedUser);
+
+      if (!Array.isArray(user.permissions)) {
+        sessionStorage.removeItem("edw_user");
+        return null;
+      }
+
+      return user as LoginResponse["user"];
     } catch {
       sessionStorage.removeItem("edw_user");
       return null;
     }
   });
+
+  // FIRST LOGIN - FORCE CHANGE PASSWORD
+  const [mustChangePassword, setMustChangePassword] = useState(() => {
+    const storedUser = sessionStorage.getItem("edw_user");
+
+    if (!storedUser) return false;
+
+    try {
+      const user = JSON.parse(storedUser);
+      return user.mustChangePassword === true;
+    } catch {
+      return false;
+    }
+  });
+  const [firstLoginCurrentPassword, setFirstLoginCurrentPassword] =
+    useState("");
+  const [firstLoginNewPassword, setFirstLoginNewPassword] = useState("");
+  const [firstLoginConfirmPassword, setFirstLoginConfirmPassword] =
+    useState("");
+  const [firstLoginShowPassword, setFirstLoginShowPassword] = useState(false);
+  const [firstLoginLoading, setFirstLoginLoading] = useState(false);
+  const [firstLoginError, setFirstLoginError] = useState("");
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -168,8 +199,18 @@ function App() {
 
       sessionStorage.setItem("edw_access_token", data.accessToken);
       sessionStorage.setItem("edw_refresh_token", data.refreshToken);
-      sessionStorage.setItem("edw_user", JSON.stringify(data.user));
-      setDashboardUser(data.user);
+
+      const profileResponse = await axios.get(`${API_URL}/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${data.accessToken}`,
+        },
+      });
+
+      const completeUser = profileResponse.data.user;
+
+      sessionStorage.setItem("edw_user", JSON.stringify(completeUser));
+      setDashboardUser(completeUser);
+      setMustChangePassword(completeUser.mustChangePassword);
 
       if (rememberMe) {
         localStorage.setItem("edw_remembered_email", normalizedEmail);
@@ -206,6 +247,111 @@ function App() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFirstLoginChangePassword = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    setFirstLoginError("");
+
+    const currentPassword = firstLoginCurrentPassword;
+    const newPassword = firstLoginNewPassword;
+
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      setFirstLoginError("Password harus terdiri dari 12–128 karakter.");
+      return;
+    }
+
+    if (
+      !/[A-Z]/.test(newPassword) ||
+      !/[a-z]/.test(newPassword) ||
+      !/[0-9]/.test(newPassword) ||
+      !/[^A-Za-z0-9]/.test(newPassword)
+    ) {
+      setFirstLoginError(
+        "Password harus mengandung huruf kapital, huruf kecil, angka, dan karakter spesial.",
+      );
+      return;
+    }
+
+    if (newPassword !== firstLoginConfirmPassword) {
+      setFirstLoginError("Konfirmasi password tidak sesuai.");
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setFirstLoginError(
+        "Password baru harus berbeda dari temporary password.",
+      );
+      return;
+    }
+
+    setFirstLoginLoading(true);
+
+    try {
+      const accessToken = sessionStorage.getItem("edw_access_token");
+
+      // 1. Ubah temporary password
+      await axios.patch(
+        `${API_URL}/auth/change-password`,
+        {
+          currentPassword,
+          newPassword,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+
+      // 2. Login kembali menggunakan password baru
+      const loginResponse = await axios.post<LoginResponse>(
+        `${API_URL}/auth/login`,
+        {
+          email: dashboardUser?.email,
+          password: newPassword,
+        },
+      );
+
+      const data = loginResponse.data;
+
+      sessionStorage.setItem("edw_access_token", data.accessToken);
+      sessionStorage.setItem("edw_refresh_token", data.refreshToken);
+
+      const profileResponse = await axios.get(`${API_URL}/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${data.accessToken}`,
+        },
+      });
+
+      const completeUser = profileResponse.data.user;
+
+      sessionStorage.setItem("edw_user", JSON.stringify(completeUser));
+      setDashboardUser(completeUser);
+      setMustChangePassword(completeUser.mustChangePassword);
+
+      setFirstLoginCurrentPassword("");
+      setFirstLoginNewPassword("");
+      setFirstLoginConfirmPassword("");
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const message = err.response?.data?.message;
+
+        setFirstLoginError(
+          typeof message === "string"
+            ? message
+            : Array.isArray(message)
+              ? message.join(", ")
+              : "Gagal mengubah password. Silakan coba kembali.",
+        );
+      } else {
+        setFirstLoginError("Terjadi kesalahan yang tidak terduga.");
+      }
+    } finally {
+      setFirstLoginLoading(false);
     }
   };
 
@@ -564,6 +710,164 @@ function App() {
       setActivationLoading(false);
     }
   };
+
+  if (
+    dashboardUser &&
+    mustChangePassword &&
+    !activationMode &&
+    !resetMode &&
+    !forgotMode
+  ) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-8">
+        <div className="w-full max-w-md">
+          <div className="mb-8 text-center">
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-edw-navy text-white shadow-lg">
+              <LockKeyhole size={28} />
+            </div>
+
+            <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-edw-teal">
+              EDW Account Security
+            </p>
+
+            <h1 className="text-2xl font-bold tracking-tight text-edw-navy">
+              Change Your Password
+            </h1>
+
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Halo, {dashboardUser.fullName}. Demi keamanan akun, Anda wajib
+              mengganti temporary password sebelum melanjutkan ke EDW.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50 sm:p-8">
+            {firstLoginError && (
+              <div
+                role="alert"
+                className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+              >
+                {firstLoginError}
+              </div>
+            )}
+
+            <form
+              onSubmit={handleFirstLoginChangePassword}
+              className="space-y-5"
+            >
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-edw-navy">
+                  Temporary Password
+                </label>
+
+                <input
+                  type="password"
+                  value={firstLoginCurrentPassword}
+                  onChange={(event) =>
+                    setFirstLoginCurrentPassword(event.target.value)
+                  }
+                  autoComplete="current-password"
+                  required
+                  disabled={firstLoginLoading}
+                  placeholder="Masukkan temporary password"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-edw-teal focus:ring-4 focus:ring-edw-teal/10 disabled:bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-edw-navy">
+                  New Password
+                </label>
+
+                <div className="relative">
+                  <input
+                    type={firstLoginShowPassword ? "text" : "password"}
+                    value={firstLoginNewPassword}
+                    onChange={(event) =>
+                      setFirstLoginNewPassword(event.target.value)
+                    }
+                    autoComplete="new-password"
+                    required
+                    disabled={firstLoginLoading}
+                    placeholder="Buat password baru"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 pr-12 text-sm outline-none transition focus:border-edw-teal focus:ring-4 focus:ring-edw-teal/10 disabled:bg-slate-50"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setFirstLoginShowPassword((value) => !value)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-edw-teal"
+                    aria-label="Toggle password visibility"
+                  >
+                    {firstLoginShowPassword ? (
+                      <EyeOff size={18} />
+                    ) : (
+                      <Eye size={18} />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-edw-navy">
+                  Confirm New Password
+                </label>
+
+                <input
+                  type={firstLoginShowPassword ? "text" : "password"}
+                  value={firstLoginConfirmPassword}
+                  onChange={(event) =>
+                    setFirstLoginConfirmPassword(event.target.value)
+                  }
+                  autoComplete="new-password"
+                  required
+                  disabled={firstLoginLoading}
+                  placeholder="Konfirmasi password baru"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-edw-teal focus:ring-4 focus:ring-edw-teal/10 disabled:bg-slate-50"
+                />
+              </div>
+
+              <div className="rounded-xl border border-edw-cyan bg-edw-cyan/20 p-4">
+                <p className="mb-2 text-sm font-semibold text-edw-navy">
+                  Password requirements
+                </p>
+
+                <ul className="space-y-1 text-xs leading-5 text-slate-600">
+                  <li>• Minimal 12 karakter</li>
+                  <li>• Mengandung huruf besar dan huruf kecil</li>
+                  <li>• Mengandung angka</li>
+                  <li>• Mengandung karakter spesial</li>
+                  <li>• Berbeda dari temporary password</li>
+                </ul>
+              </div>
+
+              <button
+                type="submit"
+                disabled={firstLoginLoading}
+                className="flex w-full items-center justify-center gap-3 rounded-xl bg-edw-teal px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-edw-teal/20 transition hover:bg-edw-navy disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {firstLoginLoading ? (
+                  <>
+                    <LoaderCircle size={19} className="animate-spin" />
+                    Updating Password...
+                  </>
+                ) : (
+                  <>
+                    Update Password & Continue
+                    <ArrowRight size={19} />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 flex items-center justify-center gap-2 text-xs text-slate-400">
+              <ShieldCheck size={15} className="text-edw-teal" />
+              Protected by EDW Authentication System
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (dashboardUser && !activationMode && !resetMode && !forgotMode) {
     return <DashboardLayout user={dashboardUser} onLogout={handleLogout} />;

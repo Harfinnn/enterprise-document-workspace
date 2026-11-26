@@ -18,6 +18,14 @@ export interface UserFilterParams {
   roleId?: string;
 }
 
+export interface CreateUserPayload {
+  fullName: string;
+  email: string;
+  employeeNo?: string;
+  departmentId: string;
+  roleId: string;
+}
+
 export async function getUsers(
   page = 1,
   limit = 10,
@@ -115,6 +123,16 @@ export async function resendUserActivation(id: string) {
   const response = await axios.post(
     `${API_URL}/users/${id}/resend-activation`,
     {},
+    getAuthConfig(),
+  );
+
+  return response.data;
+}
+
+export async function createUser(payload: CreateUserPayload) {
+  const response = await axios.post(
+    `${API_URL}/users`,
+    payload,
     getAuthConfig(),
   );
 

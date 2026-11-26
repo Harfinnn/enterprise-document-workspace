@@ -32,7 +32,10 @@ const rolePriority: WorkspaceRole[] = [
 ];
 
 const navigationGroups: NavigationGroup[] = [
-  { label: "Workspace", keys: ["overview"] },
+  {
+    label: "Workspace",
+    keys: ["overview", "documents"],
+  },
   {
     label: "Administration",
     keys: [
@@ -40,7 +43,6 @@ const navigationGroups: NavigationGroup[] = [
       "users",
       "roles",
       "departments",
-      "documents",
       "audit",
       "settings",
     ],
@@ -48,7 +50,6 @@ const navigationGroups: NavigationGroup[] = [
   {
     label: "Document Governance",
     keys: [
-      "document-repository",
       "document-review",
       "document-approval",
       "document-classification",
@@ -65,16 +66,11 @@ const navigationGroups: NavigationGroup[] = [
   },
   {
     label: "Department",
-    keys: [
-      "department-documents",
-      "review-requests",
-      "team-documents",
-      "department-reports",
-    ],
+    keys: ["review-requests", "team-documents", "department-reports"],
   },
   {
     label: "Personal Documents",
-    keys: ["my-documents", "shared-documents", "recent-documents", "favorites"],
+    keys: ["shared-documents", "recent-documents", "favorites"],
   },
 ];
 

@@ -1,9 +1,10 @@
 
 import {
   IsString,
-  MaxLength,
   MinLength,
-} from 'class-validator';
+  MaxLength,
+} from "class-validator";
+import { IsPasswordComplexity } from "../validators/password-complexity.validator.js";
 
 export class ActivateAccountDto {
   @IsString()
@@ -12,7 +13,6 @@ export class ActivateAccountDto {
   token!: string;
 
   @IsString()
-  @MinLength(12)
-  @MaxLength(128)
+  @IsPasswordComplexity()
   newPassword!: string;
 }
